@@ -34,6 +34,8 @@ class Agent():
             self.pred, self.weights, self.rho, self.embed = self.rnn(self.state, self.seq_len)
         elif self.net_type == 'reembedding':
             self.pred, self.weights, self.rho, self.embed = self.reembedding_network(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+        elif self.net_type == 'simple':
+            self.pred, self.weights, self.rho, self.embed = self.fc_network(self.state)
         else:
             self.pred, self.weights, self.rho, self.embed = self.network(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
 
@@ -255,6 +257,27 @@ class Agent():
 
         # Returns the network output, parameters, and the last layer as placeholder
         return prediction, tf.get_collection(tf.GraphKeys.VARIABLES, scope=vs.name), last, last
+
+
+    def fc_network(self, state, d = [2*20,256,256,3]):
+        num_layers = len(d)-1
+
+        w = [None]*num_layers
+        b = [None]*num_layers
+        for i in range(num_layers):
+            w[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1), name='w'+str(i+1))
+            b[i] = tf.Variable(tf.zeros(d[i+1]), name='b'+str(i+1))
+
+        # Prediction network
+        fc = tf.reshape(state, [-1, d[0]])
+        for i in range(num_layers-1):
+            fc = tf.nn.relu(tf.matmul(fc, w[i]) + b[i])
+        
+        # Output layer
+        prediction = tf.nn.softmax( tf.matmul(fc, w[-1]) + b[-1] )
+
+        # Returns the network output, parameters, and the last layer as placeholder
+        return prediction, w + b, fc, fc
 
 
 def batchToArrays(input_list, mask_size):
