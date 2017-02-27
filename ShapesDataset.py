@@ -12,6 +12,7 @@ class shapeGenerator():
         self.point_noise_scale = params['point_noise_scale']
         self.shape_noise_scale = params['shape_noise_scale']
         self.scale_min = params['scale_min']
+        self.point_dist = params['point_dist']
 
         self.dataset_size = params['dataset_size']
         self.initial_seed = params['initial_seed']
@@ -59,7 +60,10 @@ class shapeGenerator():
 
         for i in range(N):
           # Get point from position and shape type
-          x, y = self.getPoint(shape_type, pos[i])
+          if self.point_dist == True: 
+              x, y = self.getPoint(shape_type, pos[i])
+          else:
+              x, y = self.getPoint(shape_type, float(i)/N)
 
           # Add noise
           x += noise_x[i] ; y += noise_y[i]
@@ -131,6 +135,6 @@ class shapeGenerator():
             self.num_samples_cv += 1
             return self.initial_seed_cv + offset
         else:
-            offset = self.num_samples % self.dataset_size
+            offset = self.num_samples if self.dataset_size == 0 else self.num_samples % self.dataset_size
             self.num_samples += 1
             return self.initial_seed + offset

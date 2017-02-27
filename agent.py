@@ -39,13 +39,15 @@ class Agent():
         self.state = tf.placeholder("float", [None, None, self.n_input])
         self.label = tf.placeholder("float", [None, self.n_actions])
         self.seq_len = tf.placeholder("int32", [None])
-        self.masks = tf.placeholder("float", [None, None, self.e_layer_size])
+        self.masks = tf.placeholder("float", [None, None, 1])
 
         # Get Network
         if self.net_type == 'RNN':
             self.pred, self.weights, self.rho, self.embed = self.rnn(self.state, self.seq_len)
         elif self.net_type == 'reembedding':
-            self.pred, self.weights, self.rho, self.embed = self.reembedding_network(self.state, self.seq_len, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_simple(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+        elif self.net_type == 'reembedding_full':
+            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_full(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
         elif self.net_type == 'simple':
             self.pred, self.weights, self.rho, self.embed = self.fc_network(self.state)
         else:
@@ -68,9 +70,10 @@ class Agent():
         self.l2 = tf.sqrt(tf.reduce_sum(self.rho*self.rho))
         self.l1 = tf.reduce_sum(tf.abs(self.rho))
         self.pq_mean = self.l1 / self.l2
+        self.pq_mean_sq = tf.reduce_sum(self.rho) * tf.reduce_sum(self.rho) / tf.reduce_sum(self.rho*self.rho) / tf.to_float(tf.size(self.rho))
 
         # Optimiser
-        loss = self.cross_entropy + self.sparsity_reg*self.pq_mean
+        loss = self.cross_entropy + self.sparsity_reg*self.pq_mean_sq
         optimiser = tf.train.AdamOptimizer(self.learning_rate)
         self.compute_grads = optimiser.compute_gradients(loss)
         self.apply_grads = optimiser.apply_gradients(self.compute_grads)
@@ -81,12 +84,12 @@ class Agent():
 
     def predict(self, state):
         # Repackage State using util function
-        state_, l, m = batchToArrays(state, self.e_layer_size)
+        state_, l, m = batchToArrays(state)
 
         # Get prediction and other statistics
-        pred, rho, embed = self.session.run([self.pred, self.rho_mean, self.embed], feed_dict={self.state: state_, self.seq_len: l, self.masks: m})
+        pred, rho, embed, pq_mean_sq = self.session.run([self.pred, self.rho_mean, self.embed, self.pq_mean_sq], feed_dict={self.state: state_, self.seq_len: l, self.masks: m})
 
-        statistics = { 'rho_mean': rho, 'embedding': embed }
+        statistics = { 'rho_mean': rho, 'embedding': embed, 'pq_mean_sq': pq_mean_sq }
 
         return pred, statistics
 
@@ -94,14 +97,14 @@ class Agent():
     def test(self, state, label):
 
         # Repackage State using util function
-        state_, l, m = batchToArrays(state, self.e_layer_size)
+        state_, l, m = batchToArrays(state)
 
         # Get and apply grads, cross entrophy (i.e. pediction loss) and prediction accuracy, as well as other stats
-        cross_entrophy, accuracy, rho, embed = self.session.run([self.cross_entropy, self.accuracy, self.rho_mean, self.embed],
+        cross_entrophy, accuracy, rho, embed, pq_mean_sq = self.session.run([self.cross_entropy, self.accuracy, self.rho_mean, self.embed, self.pq_mean_sq],
             feed_dict={self.state: state_, self.seq_len: l, self.masks: m, self.label: label})
 
         # Format Statistics
-        statistics = { 'rho_mean': rho, 'embedding': embed }
+        statistics = { 'rho_mean': rho, 'embedding': embed, 'pq_mean_sq': pq_mean_sq }
 
         return cross_entrophy, accuracy, statistics
 
@@ -109,10 +112,10 @@ class Agent():
     def train(self, state, label):
 
         # Repackage State using util function
-        state_, l, m = batchToArrays(state, self.e_layer_size)
+        state_, l, m = batchToArrays(state)
 
         # Get and apply grads, cross entrophy (i.e. pediction loss) and prediction accuracy, as well as other stats
-        gvs, cross_entrophy, accuracy, rho, embed = self.session.run([self.apply_grads, self.cross_entropy, self.accuracy, self.rho_mean, self.embed],
+        gvs, cross_entrophy, accuracy, rho, embed, pq_mean_sq = self.session.run([self.apply_grads, self.cross_entropy, self.accuracy, self.rho_mean, self.embed, self.pq_mean_sq],
             feed_dict={self.state: state_, self.seq_len: l, self.masks: m, self.label: label})
 
         # Update grads, with janky grads code...
@@ -120,17 +123,16 @@ class Agent():
         #for i, grad_var in enumerate(gvs):
         #    feed_dict_[self.compute_grads[i][0]] = grad_var[0]
         #self.session.run(self.apply_grads, feed_dict=feed_dict_)
-        
 
         # Format Statistics
-        statistics = { 'rho_mean': rho, 'embedding': embed }
+        statistics = { 'rho_mean': rho, 'embedding': embed, 'pq_mean_sq': pq_mean_sq }
 
         return cross_entrophy, accuracy, statistics
 
 
     def get_embedding(self, state):
         # Repackage State using util function
-        state_, l, m = batchToArrays(state, self.e_layer_size)
+        state_, l, m = batchToArrays(state)
 
         # Get embedding
         embed = self.session.run(self.embed, feed_dict={self.state: state_, self.seq_len: l, self.masks: m})
@@ -185,7 +187,8 @@ class Agent():
 
         # Regularisation for sparsity (average activation)
         #rho = tf.reduce_mean(embed, 1)
-        rho = tf.reduce_sum(embeds, [0, 1]) / tf.reduce_sum(mask, [0, 1])
+        #rho = tf.reduce_sum(embeds, [0, 1]) / tf.reduce_sum(mask, [0, 1])
+        rho = embeds
 
         ### Legacy Method
         #  w_1 = tf.Variable(tf.random_normal((2,64), stddev=0.1))
@@ -202,7 +205,78 @@ class Agent():
         return predict, w_e + b_e + w_n + b_n, rho, embed
 
 
-    def reembedding_network(self, state, seq_len, emb_layer_sizes = [2,128,256], net_layer_sizes = [256,128,3]):
+
+    def reembedding_network_simple(self, state, mask, emb_layer_sizes = [2,128,256], net_layer_sizes = [256,128,3]):
+    # This could probably be moved into a 'models' file
+        d = net_layer_sizes ; d_e = emb_layer_sizes
+        num_layers = len(d)-1
+        num_layers_e = len(d_e)-1
+
+        # Set up params
+        with tf.variable_scope("params_agent"+str(self.agent_num)) as vs:
+            #Embedding part
+            w_e = [None]*num_layers_e
+            b_e = [None]*num_layers_e
+            for i in range(num_layers_e):
+                w_e[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1, seed=self.get_seed()), name='emb_w'+str(i+1))
+                b_e[i] = tf.Variable(tf.zeros(d_e[i+1]), name='emb_b'+str(i+1))
+
+            # Re-embedding part
+            w_re_1 = tf.Variable(tf.random_normal((2,64), stddev=0.1), name='reemb_w_1')
+            w_re_e = tf.Variable(tf.random_normal((self.e_layer_size,64), stddev=0.1), name='reemb_w_e')
+            b_re_1 = tf.Variable(tf.zeros(64), name='reemb_b_1')
+            w_re_2 = tf.Variable(tf.random_normal((64,self.e_layer_size), stddev=0.1), name='reemb_w_2')
+            b_re_2 = tf.Variable(tf.zeros(self.e_layer_size), name='reemb_b_2')
+
+            # Combining
+            w_n_e = tf.Variable(tf.random_normal((d[0],d[1]), stddev=0.1), name='net_w_e')
+
+            # Final part
+            w_n = [None]*num_layers
+            b_n = [None]*num_layers
+            for i in range(num_layers):
+                w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1, seed=self.get_seed()), name='net_w'+str(i+1))
+                b_n[i] = tf.Variable(tf.zeros(d[i+1]), name='net_b'+str(i+1))
+
+
+        # Build graph
+
+        # Embedding network
+
+        elems = state
+        for i in range(num_layers_e):
+            elems = tf.nn.relu(tf.nn.conv1d(elems, [w_e[i]], stride=1, padding="SAME") + b_e[i])
+
+        init_embeds = tf.mul(elems, mask)
+        init_embed_ = tf.nn.max_pool([init_embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
+        init_embed = tf.reshape(init_embed_, [-1, self.e_layer_size])
+
+        # Rembedding network
+        elements_part = tf.nn.conv1d(state, [w_re_1], stride=1, padding="SAME")
+        embeddings_part = tf.reshape(tf.matmul(init_embed, w_re_e), [-1,1,64])
+        h_layer = tf.nn.relu( elements_part + embeddings_part + b_re_1 )
+        o_layer = tf.nn.relu( tf.nn.conv1d(h_layer, [w_re_2], stride=1, padding="SAME") + b_re_2 )
+        
+        embeds = tf.mul(o_layer, mask)
+        embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
+        embed = tf.reshape(embed_, [-1, self.e_layer_size])
+
+        # Prediction network
+        fc = embed
+        for i in range(num_layers-1):
+            fc = tf.nn.relu(tf.matmul(fc, w_n[i]) + b_n[i])
+        # Output layer
+        predict = tf.nn.softmax( tf.matmul(fc, w_n[-1]) + b_n[-1] )
+
+        # Regularisation for sparsity (average activation)
+        rho = embed
+
+        # Returns the network output, parameters, object embeddings, and representation layer
+        return predict, tf.get_collection(tf.GraphKeys.VARIABLES, scope=vs.name), rho, embed
+
+
+
+    def reembedding_network_full(self, state, mask, emb_layer_sizes = [2,128,256], net_layer_sizes = [256,128,3]):
     # This could probably be moved into a 'models' file
         d = net_layer_sizes ; d_e = emb_layer_sizes
         num_layers = len(d)-1
@@ -227,28 +301,14 @@ class Agent():
         # Build graph
 
         # Embedding network
-
-        #Initial layer
         elems = state
         for i in range(num_layers_e):
-            pool = tf.matmul(mask_and_pool(elems, seq_len), w_e_p[i])
+            pool = tf.matmul(mask_and_pool_(elems, mask), w_e_p[i])
             conv = tf.nn.conv1d(elems, [w_e_c[i]], stride=1, padding="SAME")
             elems = tf.nn.relu(tf.reshape(pool,[-1,1,d_e[i+1]]) + conv + b_e[i])
         
-        #init_embeds = tf.mul(conv, mask)
-        #init_embed_ = tf.nn.max_pool([init_embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
-        #init_embed = tf.reshape(init_embed_, [-1, self.e_layer_size])
-
-        # Rembedding network
-        #elements_part = tf.nn.conv1d(state, [w_re_1], stride=1, padding="SAME")
-        #embeddings_part = tf.reshape(tf.matmul(init_embed, w_re_e), [-1,1,64])
-        #h_layer = tf.nn.relu( elements_part + embeddings_part + b_re_1 , name='hidden_layer')
-        #o_layer = tf.nn.relu( tf.nn.conv1d(h_layer, [w_re_2], stride=1, padding="SAME") + b_re_2 )
-        #embeds = tf.mul(o_layer, mask)
-        #embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
-        #embed = tf.reshape(embed_, [-1, self.e_layer_size])
-
-        embed = mask_and_pool(elems, seq_len)
+        # Pool
+        embed = mask_and_pool_(elems, mask)
 
         # Prediction network
         fc = embed
@@ -258,10 +318,11 @@ class Agent():
         predict = tf.nn.softmax( tf.matmul(fc, w_n[-1]) + b_n[-1] )
 
         # Regularisation for sparsity (average activation)
-        rho = embed #tf.reduce_sum(embeds, [0, 1]) / tf.reduce_sum(mask, [0, 1])
+        rho = embed
 
         # Returns the network output, parameters, object embeddings, and representation layer
-        return predict, w_e_c + b_e + w_n + b_n, rho, embed
+        return predict, w_e_c + w_e_p + b_e + w_n + b_n, rho, embed
+
 
 
     def rnn(self, state, seq_len, d = [2,128,128,3]):
@@ -269,19 +330,22 @@ class Agent():
 
         # Build graph
         lstm_cells = []
-        for i in range(num_layers): lstm_cells.append(rnn_cell.GRUCell(d[i+1]))
+        for i in range(num_layers): lstm_cells.append(rnn_cell.GRUCell(d[i+1], activation=tf.nn.relu))
         multi_cell = rnn_cell.MultiRNNCell(lstm_cells)
 
         with tf.variable_scope("params_agent"+str(self.agent_num)) as vs:
           w = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out')
+          w_ = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out_')
           b = tf.Variable(tf.zeros(d[-1]), name='b_out')
-          output, _ = tf.nn.dynamic_rnn(multi_cell, state, sequence_length = seq_len, dtype=tf.float32)
+          output, _ = tf.nn.bidirectional_dynamic_rnn(multi_cell, multi_cell, state, sequence_length = seq_len, dtype=tf.float32)
 
-        last = last_relevant(output, seq_len)
-        prediction = tf.nn.softmax( tf.matmul(last, w) + b )
+        last = last_relevant(output[0], seq_len)
+        first = last_relevant(output[1], seq_len)
+        prediction = tf.nn.softmax( tf.matmul(last, w) + tf.matmul(first, w_) + b )
 
         # Returns the network output, parameters, and the last layer as placeholder
         return prediction, tf.get_collection(tf.GraphKeys.VARIABLES, scope=vs.name), last, last
+
 
 
     def fc_network(self, state, d = [2*20,256,256,3]):
@@ -305,7 +369,7 @@ class Agent():
         return prediction, w + b, fc, fc
 
 
-def batchToArrays(input_list, mask_size):
+def batchToArrays(input_list):
     max_len = 0
     out = []; seq_len = []; masks = []
     for i in input_list: max_len = max(len(i),max_len)
@@ -313,13 +377,14 @@ def batchToArrays(input_list, mask_size):
         # Zero pad output
         out.append(np.pad(np.array(l,dtype=np.float32), ((0,max_len-len(l)),(0,0)), mode='constant'))
         seq_len.append(len(l))
-        # 
-        masks.append(np.pad(np.array(np.ones((len(l),mask_size)),dtype=np.float32), ((0,max_len-len(l)),(0,0)), mode='constant'))
+        # Create mask...
+        masks.append(np.pad(np.array(np.ones((len(l),1)),dtype=np.float32), ((0,max_len-len(l)),(0,0)), mode='constant'))
     return out, seq_len, masks
 
 
 def mask_and_pool(embeds, seq_len):
     # Masking code shamelessly ripped off stack overflow...
+    # This is actually pretty slow, there's probably a better way to do this...
 
     # Make a matrix where each row contains the length
     max_len = tf.reduce_max(seq_len)
@@ -337,6 +402,22 @@ def mask_and_pool(embeds, seq_len):
 
     # Pool using max pooling
     embed = tf.reduce_max(masked_embeds, 1)
+
+    # For mean pooling:
+    #embed = tf.reduce_sum(masked_embeds, 1) / tf.reduce_sum(mask, 1)
+
+    return embed
+
+def mask_and_pool_(embeds, mask):
+    # Use broadcasting to multiply
+    masked_embeds = tf.mul(embeds, mask)
+
+    # Pool using max pooling
+    embed = tf.reduce_max(masked_embeds, 1)
+
+    # For mean pooling:
+    #embed = tf.reduce_sum(masked_embeds, 1) / tf.reduce_sum(mask, 1)
+
     return embed
 
 def last_relevant(output, length):
