@@ -45,13 +45,13 @@ class Agent():
         if self.net_type == 'RNN':
             self.pred, self.weights, self.rho, self.embed = self.rnn(self.state, self.seq_len)
         elif self.net_type == 'reembedding':
-            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_simple(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_simple(self.state, self.masks, [self.n_input,256,self.e_layer_size], [self.e_layer_size,128,self.n_actions])
         elif self.net_type == 'reembedding_full':
-            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_full(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+            self.pred, self.weights, self.rho, self.embed = self.reembedding_network_full(self.state, self.masks, [self.n_input,256,256,self.e_layer_size], [self.e_layer_size,256,40,self.n_actions])
         elif self.net_type == 'simple':
             self.pred, self.weights, self.rho, self.embed = self.fc_network(self.state)
         else:
-            self.pred, self.weights, self.rho, self.embed = self.network(self.state, self.masks, [2,128,self.e_layer_size], [self.e_layer_size,128,3])
+            self.pred, self.weights, self.rho, self.embed = self.network(self.state, self.masks, [self.n_input,128,self.e_layer_size], [self.e_layer_size,128,self.n_actions])
 
         # Prediction accuracy
         correct_pred = tf.equal(tf.argmax(self.pred, 1),tf.argmax(self.label, 1))
@@ -174,7 +174,7 @@ class Agent():
 
         # Pool along objects dimension
         # Using nn pooling is slightly faster than tf.reduce_max
-        embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
+        embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 5000, 1], strides=[1, 1, 5000, 1], padding="SAME")
         embed = tf.reshape(embed_, [-1, self.e_layer_size])
         #embed = tf.reduce_sum(embeds, 1) / tf.reduce_sum(mask, 1)
 
@@ -222,10 +222,10 @@ class Agent():
                 b_e[i] = tf.Variable(tf.zeros(d_e[i+1]), name='emb_b'+str(i+1))
 
             # Re-embedding part
-            w_re_1 = tf.Variable(tf.random_normal((2,64), stddev=0.1), name='reemb_w_1')
-            w_re_e = tf.Variable(tf.random_normal((self.e_layer_size,64), stddev=0.1), name='reemb_w_e')
-            b_re_1 = tf.Variable(tf.zeros(64), name='reemb_b_1')
-            w_re_2 = tf.Variable(tf.random_normal((64,self.e_layer_size), stddev=0.1), name='reemb_w_2')
+            w_re_1 = tf.Variable(tf.random_normal((3,128), stddev=0.1), name='reemb_w_1')
+            w_re_e = tf.Variable(tf.random_normal((self.e_layer_size,128), stddev=0.1), name='reemb_w_e')
+            b_re_1 = tf.Variable(tf.zeros(128), name='reemb_b_1')
+            w_re_2 = tf.Variable(tf.random_normal((128,self.e_layer_size), stddev=0.1), name='reemb_w_2')
             b_re_2 = tf.Variable(tf.zeros(self.e_layer_size), name='reemb_b_2')
 
             # Combining
@@ -248,17 +248,17 @@ class Agent():
             elems = tf.nn.relu(tf.nn.conv1d(elems, [w_e[i]], stride=1, padding="SAME") + b_e[i])
 
         init_embeds = tf.mul(elems, mask)
-        init_embed_ = tf.nn.max_pool([init_embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
+        init_embed_ = tf.nn.max_pool([init_embeds], ksize=[1, 1, 5000, 1], strides=[1, 1, 5000, 1], padding="SAME")
         init_embed = tf.reshape(init_embed_, [-1, self.e_layer_size])
 
         # Rembedding network
         elements_part = tf.nn.conv1d(state, [w_re_1], stride=1, padding="SAME")
-        embeddings_part = tf.reshape(tf.matmul(init_embed, w_re_e), [-1,1,64])
+        embeddings_part = tf.reshape(tf.matmul(init_embed, w_re_e), [-1,1,128])
         h_layer = tf.nn.relu( elements_part + embeddings_part + b_re_1 )
         o_layer = tf.nn.relu( tf.nn.conv1d(h_layer, [w_re_2], stride=1, padding="SAME") + b_re_2 )
         
         embeds = tf.mul(o_layer, mask)
-        embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 1000, 1], strides=[1, 1, 1000, 1], padding="SAME")
+        embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 5000, 1], strides=[1, 1, 5000, 1], padding="SAME")
         embed = tf.reshape(embed_, [-1, self.e_layer_size])
 
         # Prediction network
