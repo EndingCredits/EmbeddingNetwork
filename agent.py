@@ -48,6 +48,8 @@ class Agent():
             self.pred, self.weights, self.rho, self.embed = self.reembedding_network_simple(self.state, self.masks, [self.n_input,256,self.e_layer_size], [self.e_layer_size,128,self.n_actions])
         elif self.net_type == 'reembedding_full':
             self.pred, self.weights, self.rho, self.embed = self.reembedding_network_full(self.state, self.masks, [self.n_input,256,256,self.e_layer_size], [self.e_layer_size,256,40,self.n_actions])
+        elif self.net_type == 'PCL':
+            self.pred, self.weights, self.rho, self.embed = self.PCL_network(self.state, self.masks, [self.n_input,256,256,self.e_layer_size], [self.e_layer_size,256,40,self.n_actions])
         elif self.net_type == 'simple':
             self.pred, self.weights, self.rho, self.embed = self.fc_network(self.state)
         else:
@@ -75,7 +77,7 @@ class Agent():
         # Optimiser
         loss = self.cross_entropy + self.sparsity_reg*self.pq_mean_sq
         optimiser = tf.train.AdamOptimizer(self.learning_rate)
-        self.compute_grads = optimiser.compute_gradients(loss)
+        self.compute_grads = optimiser.compute_gradients(loss, self.weights)
         self.apply_grads = optimiser.apply_gradients(self.compute_grads)
 
     def get_seed(self):
@@ -170,7 +172,7 @@ class Agent():
         embeds = conv#tf.nn.softmax(tf.nn.conv1d(conv, [w_e[-1]], stride=1, padding="SAME") + b_e[-1])#conv
 
         # Mask embeds so that we remove anything from 0-padded inputs
-        embeds = tf.mul(embeds, mask)
+        embeds = tf.multiply(embeds, mask)
 
         # Pool along objects dimension
         # Using nn pooling is slightly faster than tf.reduce_max
@@ -247,7 +249,7 @@ class Agent():
         for i in range(num_layers_e):
             elems = tf.nn.relu(tf.nn.conv1d(elems, [w_e[i]], stride=1, padding="SAME") + b_e[i])
 
-        init_embeds = tf.mul(elems, mask)
+        init_embeds = tf.multiply(elems, mask)
         init_embed_ = tf.nn.max_pool([init_embeds], ksize=[1, 1, 5000, 1], strides=[1, 1, 5000, 1], padding="SAME")
         init_embed = tf.reshape(init_embed_, [-1, self.e_layer_size])
 
@@ -257,7 +259,7 @@ class Agent():
         h_layer = tf.nn.relu( elements_part + embeddings_part + b_re_1 )
         o_layer = tf.nn.relu( tf.nn.conv1d(h_layer, [w_re_2], stride=1, padding="SAME") + b_re_2 )
         
-        embeds = tf.mul(o_layer, mask)
+        embeds = tf.multiply(o_layer, mask)
         embed_ = tf.nn.max_pool([embeds], ksize=[1, 1, 5000, 1], strides=[1, 1, 5000, 1], padding="SAME")
         embed = tf.reshape(embed_, [-1, self.e_layer_size])
 
@@ -322,6 +324,58 @@ class Agent():
 
         # Returns the network output, parameters, object embeddings, and representation layer
         return predict, w_e_c + w_e_p + b_e + w_n + b_n, rho, embed
+
+
+
+    def PCL_network(self, state, mask, emb_layer_sizes = [3,256,256], net_layer_sizes = [256,128,3], keep_prob=0.75):
+    # This could probably be moved into a 'models' file
+    # This replicates the network of https://arxiv.org/abs/1611.04500
+        d = net_layer_sizes ; d_e = emb_layer_sizes
+        num_layers = len(d)-1
+        num_layers_e = len(d_e)-1
+
+        # Set up params
+        with tf.variable_scope("params_agent"+str(self.agent_num)) as vs:
+            w_e_c = [None]*num_layers_e
+            w_e_p = [None]*num_layers_e
+            b_e = [None]*num_layers_e
+            for i in range(num_layers_e):
+                w_e_c[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1, seed=self.get_seed()), name='emb_c_w'+str(i+1))
+                #w_e_p[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1, seed=self.get_seed()), name='emb_p_w'+str(i+1))
+                b_e[i] = tf.Variable(tf.zeros(d_e[i+1]), name='emb_b'+str(i+1))
+
+            w_n = [None]*num_layers
+            b_n = [None]*num_layers
+            for i in range(num_layers):
+                w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1, seed=self.get_seed()), name='net_w'+str(i+1))
+                b_n[i] = tf.Variable(tf.zeros(d[i+1]), name='net_b'+str(i+1))
+
+        # Build graph
+
+        # Embedding network
+        elems = state
+        for i in range(num_layers_e):
+            pool = tf.matmul(mask_and_pool_(elems, mask), w_e_c[i])
+            conv = tf.nn.conv1d(elems, [w_e_c[i]], stride=1, padding="SAME")
+            elems = tf.nn.tanh(tf.reshape(pool,[-1,1,d_e[i+1]]) + conv + b_e[i])
+        
+        # Pool
+        embed = mask_and_pool_(elems, mask)
+
+        # Prediction network
+        fc = tf.nn.dropout(embed, keep_prob)
+        for i in range(num_layers-1):
+            fc_ = tf.nn.tanh(tf.matmul(fc, w_n[i]) + b_n[i])
+            fc = tf.nn.dropout(fc_, keep_prob)
+        # Output layer
+        predict = tf.nn.softmax( tf.matmul(fc, w_n[-1]) + b_n[-1] )
+
+        # Regularisation for sparsity (average activation)
+        rho = embed
+
+        # Returns the network output, parameters, object embeddings, and representation layer
+        return predict, w_e_c + w_e_p + b_e + w_n + b_n, rho, embed
+
 
 
 
@@ -398,7 +452,7 @@ def mask_and_pool(embeds, seq_len):
     mask = tf.to_float(tf.less(range_row, lengths_transposed))
     
     # Use broadcasting to multiply
-    masked_embeds = tf.mul(embeds, tf.expand_dims(mask,2))
+    masked_embeds = tf.multiply(embeds, tf.expand_dims(mask,2))
 
     # Pool using max pooling
     embed = tf.reduce_max(masked_embeds, 1)
@@ -410,7 +464,7 @@ def mask_and_pool(embeds, seq_len):
 
 def mask_and_pool_(embeds, mask):
     # Use broadcasting to multiply
-    masked_embeds = tf.mul(embeds, mask)
+    masked_embeds = tf.multiply(embeds, mask)
 
     # Pool using max pooling
     embed = tf.reduce_max(masked_embeds, 1)
