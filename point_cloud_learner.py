@@ -14,8 +14,11 @@ from ModelDataset import ModelDataset
 
 def main(_):
   
+  config = tf.ConfigProto()
+  config.gpu_options.allow_growth=True
+
   # Launch the graph
-  with tf.Session() as sess:
+  with tf.Session(config=config) as sess:
 
     # Set up agents
     agent_params = {
