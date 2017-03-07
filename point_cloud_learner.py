@@ -46,8 +46,8 @@ def main(_):
     # Initialise variables
     sess.run(tf.global_variables_initializer())
 
-    stats = train_agent(agent, env, 100000)
-    test_stats = test_agent(agent, env)
+    train_agent(agent, env, 100000)
+    test_agent(agent, env)
 
     
 
@@ -58,16 +58,17 @@ def train_agent(agent, env, training_iters, display_step = 100):
         print "    " + key + ": " + str(agent.hyperparams[key])
 
     # Inititalise statistics
-    steps= [0] ; loss = [ 0.0, ] ; acc = [ 0.0, ]
-    rho = [] ; emb = [] ; pq = []
-    last_update = 0
+    steps = [0] ; loss = [ 0.0, ] ; acc = [ 0.0, ]
+    train_loss = [ 0.0, ] ; train_acc = [ 0.0, ]
+    last_update = 0 ; last_update_train = 0
 
     # Keep training until reach max iterations
     for step in tqdm(range(training_iters), ncols=70):
 
       # Train
       state, label, metadata = env.getBatch(64)
-      agent.train(state, label)
+      l, a, _ = agent.train(state, label)
+      train_loss.append(l) ; train_acc.append(a)
 
       if (step) % 10 == 0:
           state, label, metadata = env.getBatch(64, True)
@@ -75,18 +76,16 @@ def train_agent(agent, env, training_iters, display_step = 100):
 
           # Update Statistics
           steps.append(step) ; loss.append(l) ; acc.append(a)
-          rho.append(s['rho_mean']) ; emb.append(np.mean(s['embedding']))
-          pq.append(np.mean(s['pq_mean_sq']))
  
       # Display Statistics
       if (step) % display_step == 0:
-         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100 ; r = np.mean(pq[last_update:])
-         tqdm.write("{}, {:>7}/{}it | loss: {:4.2f}, acc: {:4.2f}%, pq: {:4.2f}".format(time.strftime("%H:%M:%S"), step, training_iters, l, a, r))
-         last_update = np.size(loss)
+         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100
+         l_ = np.mean(train_loss[last_update_train:]) ; a_ = np.mean(train_acc[last_update_train:]) * 100
+         tqdm.write("{}, {:>7}/{}it | train_loss: {:4.2f}, train_acc: {:4.2f}%, test_loss: {:4.2f}, test_acc: {:4.2f}%, pq: {:4.2f}".format(
+             time.strftime("%H:%M:%S"), step, training_iters, l_, a_, l, a, r))
+         last_update = np.size(loss) ; last_update_train = np.size(train_loss)
 
-    stats = { 'step': steps, 'accuracy': acc, 'loss': loss, 'pq_mean': pq }
-
-    return stats
+    return 0
 
 
 def test_agent(agent, env, test_iters=100):
@@ -105,11 +104,9 @@ def test_agent(agent, env, test_iters=100):
       pq.append(s['pq_mean_sq'])
 
     loss_ = np.mean(loss) ; acc_ = np.mean(acc) ; pq_ = np.mean(pq)
-    stats = { 'accuracy': acc_, 'loss': loss_, 'pq_sq': pq_ }
-
     print "Test accuracy: " + str(acc_)
 
-    return stats
+    return 0
 
 
 if __name__ == '__main__':
