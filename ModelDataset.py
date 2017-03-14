@@ -38,8 +38,8 @@ class ModelDataset():
 
     def getSingle(self, num, validation=False, truncate=False):
         pos = self.order[num]
-            initial_shape = self.train_data['data'][pos]
-            label = self.train_data['labels'][pos]
+        initial_shape = self.train_data['data'][pos]
+        label = self.train_data['labels'][pos]
 
             if truncate: 
                 mask = np.random.choice([False, True], len(initial_shape), p=[0.5, 0.5])
