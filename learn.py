@@ -25,9 +25,9 @@ def main(_):
     # Set up agents
     runs = []
     for sd in [ 123, 1234, 12345 ]:#, 123456, 1234567 ]:
-     for e in [ 128 ]:
+     for e in [ 256 ]:
       for n in [ True, False ]:
-       for ty in [ 'embed' ]:
+       for ty in [ 'reembedding' ]:
         agent_params = {
             'agent_type': ty,
             'input_size': 2,
@@ -63,7 +63,7 @@ def main(_):
       test_stats = test_agent(agent, env)
 
       summary = { 'agent_params': agent.hyperparams, 'env_params': env.params, 'step': stats['step'], 'accuracy': stats['accuracy'],
-                  'test_accuracy': test_stats['accuracy'], 'pq': test_stats['pq_sq'] }
+                  'test_accuracy': test_stats['accuracy'] }
       summaries.append(summary)
 
       print "Saving statistics to " + filename + "..."
@@ -95,13 +95,13 @@ def train_agent(agent, env, training_iters, display_step = 100):
 
           # Update Statistics
           steps.append(step) ; loss.append(l) ; acc.append(a)
-          rho.append(s['rho_mean']) ; emb.append(np.mean(s['embedding']))
-          pq.append(np.mean(s['pq_mean_sq']))
+          #rho.append(s['rho_mean']) ; emb.append(np.mean(s['embedding']))
+          #pq.append(np.mean(s['pq_mean_sq']))
  
       # Display Statistics
       if (step) % display_step == 0:
-         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100 ; r = np.mean(pq[last_update:])
-         tqdm.write("{}, {:>7}/{}it | loss: {:4.2f}, acc: {:4.2f}%, pq: {:4.2f}".format(time.strftime("%H:%M:%S"), step, training_iters, l, a, r))
+         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100# ; r = np.mean(pq[last_update:])
+         tqdm.write("{}, {:>7}/{}it | loss: {:4.2f}, acc: {:4.2f}%".format(time.strftime("%H:%M:%S"), step, training_iters, l, a ))
          last_update = np.size(loss)
 
     stats = { 'step': steps, 'accuracy': acc, 'loss': loss, 'pq_mean': pq }
@@ -122,10 +122,10 @@ def test_agent(agent, env, test_iters=100):
       state, label, metadata = env.getBatch(64, True)
       l, a, s = agent.test(state, label)
       loss.append(l) ; acc.append(a)
-      pq.append(s['pq_mean_sq'])
+      #pq.append(s['pq_mean_sq'])
 
-    loss_ = np.mean(loss) ; acc_ = np.mean(acc) ; pq_ = np.mean(pq)
-    stats = { 'accuracy': acc_, 'loss': loss_, 'pq_sq': pq_ }
+    loss_ = np.mean(loss) ; acc_ = np.mean(acc)
+    stats = { 'accuracy': acc_, 'loss': loss_ }
 
     return stats
 

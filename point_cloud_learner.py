@@ -26,7 +26,7 @@ def main(_):
         'input_size': 3,
         'num_classes': 40,
         'embedding_size': 256,
-        'learning_rate': 0.0005,
+        'learning_rate': 0.001,
         'rho_target': 0.05,
         'sparsity_reg': 0.0,
         'seed': 123
@@ -81,8 +81,8 @@ def train_agent(agent, env, training_iters, display_step = 100):
       if (step) % display_step == 0:
          l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100
          l_ = np.mean(train_loss[last_update_train:]) ; a_ = np.mean(train_acc[last_update_train:]) * 100
-         tqdm.write("{}, {:>7}/{}it | train_loss: {:4.2f}, train_acc: {:4.2f}%, test_loss: {:4.2f}, test_acc: {:4.2f}%, pq: {:4.2f}".format(
-             time.strftime("%H:%M:%S"), step, training_iters, l_, a_, l, a, r))
+         tqdm.write("{}, {:>7}/{}it | train_loss: {:4.2f}, train_acc: {:4.2f}%, test_loss: {:4.2f}, test_acc: {:4.2f}%".format(
+             time.strftime("%H:%M:%S"), step, training_iters, l_, a_, l, a))
          last_update = np.size(loss) ; last_update_train = np.size(train_loss)
 
     return 0
@@ -101,9 +101,8 @@ def test_agent(agent, env, test_iters=100):
       state, label, metadata = env.getBatch(64, True)
       l, a, s = agent.test(state, label)
       loss.append(l) ; acc.append(a)
-      pq.append(s['pq_mean_sq'])
 
-    loss_ = np.mean(loss) ; acc_ = np.mean(acc) ; pq_ = np.mean(pq)
+    loss_ = np.mean(loss) ; acc_ = np.mean(acc)
     print "Test accuracy: " + str(acc_)
 
     return 0

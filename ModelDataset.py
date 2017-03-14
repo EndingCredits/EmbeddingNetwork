@@ -36,15 +36,33 @@ class ModelDataset():
         return shapes, labels, metadata
 
 
-    def getSingle(self, num, validation=False):
-        if validation is False:
-            pos = self.order[num]
-            shape = self.train_data['data'][pos]
+    def getSingle(self, num, validation=False, truncate=False):
+        pos = self.order[num]
+            initial_shape = self.train_data['data'][pos]
             label = self.train_data['labels'][pos]
+
+            if truncate: 
+                mask = np.random.choice([False, True], len(initial_shape), p=[0.5, 0.5])
+                truncated_shape = initial_shape[mask]
+            else:
+                truncated_shape = initial_shape
+
+            scale = 0.8 + 0.45*np.random.random()
+            rot = np.random.random() * 2 * np.pi
+            cos_rot = np.cos(rot) ; sin_rot = np.sin(rot)
+
+            rotation_mat = np.matrix([[cos_rot, -sin_rot, 0],
+                                     [sin_rot,  cos_rot,  0],
+                                     [0,        0,        1]])
+            transform_mat = scale*rotation_mat
+
+            shape = np.dot(truncated_shape, transform_mat)
+
         else:
             pos = self.order_cv[num]
             shape = self.test_data['data'][pos]
             label = self.test_data['labels'][pos]
+
         metadata = []
         return shape, label, metadata
 
