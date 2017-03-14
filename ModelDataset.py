@@ -41,7 +41,7 @@ class ModelDataset():
         initial_shape = self.train_data['data'][pos]
         label = self.train_data['labels'][pos]
 
-        if validation=False:
+        if validation==False:
             if truncate: 
                 mask = np.random.choice([False, True], len(initial_shape), p=[0.5, 0.5])
                 truncated_shape = initial_shape[mask]

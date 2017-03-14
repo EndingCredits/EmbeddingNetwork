@@ -53,7 +53,7 @@ class Agent():
         elif self.net_type == 'reembedding_full':
             self.pred, self.weights = self.embedding_network(self.state, self.masks,
                 [[self.n_input,256],[256,256],[256,256],[256,self.e_layer_size]], [self.e_layer_size,256,self.n_actions],
-                use_initial = False, keep_prob = self.keep_prob  )
+                use_initial = False, keep_prob = self.keep_prob )
 
         elif self.net_type == 'PCL':
             self.pred, self.weights = self.PCL_network(self.state, self.masks,
@@ -151,7 +151,7 @@ class Agent():
     def embedding_network(self, state, mask, emb_layer_sizes = [[2,128,256]], net_layer_sizes = [256,128,3], use_initial=True, keep_prob=1.0):
     # This could probably be moved into a 'models' file
         d = net_layer_sizes
-        d_e = [[2,64,64], [2,128,128], [2,256,256]]#emb_layer_sizes
+        d_e = emb_layer_sizes
         num_layers = len(d)-1
         num_e_layers = len(d_e)
 
@@ -208,9 +208,9 @@ class Agent():
         for i in range(num_e_layers-1):
             w = w_e[i+1] ; b = b_e[i+1] ; w_c = w_e_c[i]
             # Initial layer
-            starting_elems = initial_elems if use_initial else elems
             pool = tf.matmul(mask_and_pool(elems, mask), w_c)
-            conv = tf.nn.conv1d(initial_elems, [w[0]], stride=1, padding="SAME")
+            starting_elems = initial_elems if use_initial else elems
+            conv = tf.nn.conv1d(starting_elems, [w[0]], stride=1, padding="SAME")
             elems = tf.nn.relu(tf.reshape(pool,[-1,1,d_e[i+1][1]]) + conv + b[0])
             # Other layers
             for j in range(len(w)-1):
