@@ -148,7 +148,7 @@ class Agent():
 
 
 
-    def embedding_network(self, state, mask, emb_layer_sizes = [[2,128,256]], net_layer_sizes = [256,128,3], use_initial=True, keep_prob=1.0):
+    def embedding_network(self, state, mask, emb_layer_sizes = [[2,128,256]], net_layer_sizes = [256,128,3], use_initial=True, skip_connections=True, keep_prob=1.0):
     # This could probably be moved into a 'models' file
         d = net_layer_sizes
         d_e = emb_layer_sizes
@@ -180,6 +180,13 @@ class Agent():
                 w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1, seed=self.get_seed()), name='net_w'+str(i+1))
                 b_n[i] = tf.Variable(tf.zeros(d[i+1]), name='net_b'+str(i+1))
 
+            # Skip connections from each embedding layer
+            if skip_connections:
+              target_dim = d[1]
+              w_e_s = []
+              for i in range(num_e_layers-1):
+                w_e_s.append( tf.Variable(tf.random_normal((d_e[i][-1],target_dim), stddev=0.1), name='emb_w_s'+str(i)) )
+
 
         # Build graph:
 
@@ -205,13 +212,16 @@ class Agent():
             elems = tf.nn.relu(tf.nn.conv1d(elems, [w[i]], stride=1, padding="SAME") + b[i])
 
         #Rembeddings
+        pooled_layer = []
         for i in range(num_e_layers-1):
             w = w_e[i+1] ; b = b_e[i+1] ; w_c = w_e_c[i]
             # Initial layer
             pool = tf.matmul(mask_and_pool(elems, mask), w_c)
+            if skip_connections:
+                pooled_layer.append(pool)
             starting_elems = initial_elems if use_initial else elems
             conv = tf.nn.conv1d(starting_elems, [w[0]], stride=1, padding="SAME")
-            elems = tf.nn.relu(tf.reshape(pool,[-1,1,d_e[i+1][1]]) + conv + b[0])
+            elems = tf.nn.relu(tf.reshape(pool[i],[-1,1,d_e[i+1][1]]) + conv + b[0])
             # Other layers
             for j in range(len(w)-1):
                 elems = tf.nn.relu(tf.nn.conv1d(elems, [w[j+1]], stride=1, padding="SAME") + b[j+1])
@@ -222,7 +232,13 @@ class Agent():
 
         fc = tf.nn.dropout(embed, keep_prob)
         for i in range(num_layers-1):
-            fc_ = tf.nn.relu(tf.matmul(fc, w_n[i]) + b_n[i])
+            if skip_connections and (i==0):
+                total = tf.matmul(fc, w_n[i])
+                for i in range(num_e_layers-1):
+                    total = total + tf.matmul(tf.nn.dropout(pooled_layer[i], keep_prob), w_e_s[i])
+                fc_ = tf.nn.relu(total + b_n[0])
+            else:
+                fc_ = tf.nn.relu(tf.matmul(fc, w_n[i]) + b_n[i])
             fc = tf.nn.dropout(fc_, keep_prob)
 
         # Output layer
