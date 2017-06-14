@@ -9,12 +9,12 @@ from ShapesDataset import shapeGenerator
 def main():
 
     env_params = { 'num_points': 15,
-                   'point_dist': True,
+                   'uniform_point_distribution': True,
                    'num_extra_points': 10,
                    'point_noise_scale': 0.1,
                    'shape_noise_scale': 0.5,
                    'scale_min': 0.1,
-                   'initial_seed': 1234,
+                   'initial_seed': 0,
                    'dataset_size': 100000
                  }
 

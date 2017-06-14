@@ -22,11 +22,11 @@ def main(_):
 
     # Set up agents
     agent_params = {
-        'agent_type': 'PCL',
-        'input_size': 3,
-        'num_classes': 40,
+        'agent_type': 'simple',
+        'input_size': 17,
+        'num_classes': 10,
         'embedding_size': 256,
-        'learning_rate': 0.001,
+        'learning_rate': 0.0001,
         'rho_target': 0.05,
         'sparsity_reg': 0.0,
         'seed': 123
@@ -34,8 +34,8 @@ def main(_):
 
     Agent(sess, agent_params)
 
-    env_params = { 'train_file': 'train.npy',
-                   'test_file': 'test.npy',
+    env_params = { 'train_file': 'ModelNet40train_100.npy',
+                   'test_file': 'ModelNet40test_100.npy',
                    'seed': 1234 }
 
     agent = Agent(sess, agent_params)
@@ -46,7 +46,7 @@ def main(_):
     # Initialise variables
     sess.run(tf.global_variables_initializer())
 
-    train_agent(agent, env, 100000)
+    train_agent(agent, env, 10000)
     test_agent(agent, env)
 
     

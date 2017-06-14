@@ -1,0 +1,5 @@
+*.pyc
+misc/
+utils/
+images/
+data/*_1000.npy

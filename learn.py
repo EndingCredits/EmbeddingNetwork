@@ -12,22 +12,21 @@ import tensorflow as tf
 from agent import Agent
 from ShapesDataset import shapeGenerator
 
-import matplotlib.pyplot as plt
 
 def main(_):
   
-  # Launch the graph
-  with tf.Session() as sess:
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
 
     summaries = []
     filename = args.file
 
     # Set up agents
     runs = []
-    for sd in [ 123, 1234, 12345 ]:#, 123456, 1234567 ]:
+    for sd in [ 123, 123456, 1234567 ]:
      for e in [ 256 ]:
-      for n in [ True, False ]:
-       for ty in [ 'reembedding' ]:
+      for n in [ False ]:
+       for ty in [ 'embedding' ]:
         agent_params = {
             'agent_type': ty,
             'input_size': 2,
@@ -39,10 +38,8 @@ def main(_):
             'seed': sd
         }
 
-        Agent(sess, agent_params)
-
         env_params = { 'num_points': 15,
-                   'point_dist': n,
+                   'uniform_point_distribution': n,
                    'num_extra_points': 10,
                    'point_noise_scale': 0.1,
                    'shape_noise_scale': 0.5,
@@ -50,25 +47,35 @@ def main(_):
                    'initial_seed': 1234,
                    'dataset_size': 100000 }
 
-        run = { 'Agent': Agent(sess, agent_params),
-                'Env': shapeGenerator(env_params) }
+        run = { 'agent_params': agent_params,
+                'env_params': env_params }
         runs.append(run)
 
-    # Initialise variables
-    sess.run(tf.global_variables_initializer())
 
     for run in runs:
-      agent = run['Agent'] ; env = run['Env']
-      stats = train_agent(agent, env, 5000)
-      test_stats = test_agent(agent, env)
+      # Launch the graph
+      with tf.Session(config=config) as sess:
+        agent_params = run['agent_params'] ; env_params = run['env_params']
+          
+        print "Building agent with params: "
+        print agent_params
+        agent = Agent(sess, agent_params)
+        print "Building environment with params: "
+        print env_params
+        env = shapeGenerator(env_params)
+        sess.run(tf.global_variables_initializer())
+          
+        stats = train_agent(agent, env, 1000)
+        test_stats = test_agent(agent, env)
 
-      summary = { 'agent_params': agent.hyperparams, 'env_params': env.params, 'step': stats['step'], 'accuracy': stats['accuracy'],
-                  'test_accuracy': test_stats['accuracy'] }
-      summaries.append(summary)
+        summary = { 'agent_params': agent.hyperparams, 'env_params': env.params, 'step': stats['step'], 'accuracy': stats['accuracy'],
+                      'test_accuracy': test_stats['accuracy'] }
+        summaries.append(summary)
 
-      print "Saving statistics to " + filename + "..."
-      np.save(filename, summaries)
-      print
+        print "Saving statistics to " + filename + "..."
+        np.save(filename, summaries)
+        print
+        #tf.reset_default_graph()
     
 
 def train_agent(agent, env, training_iters, display_step = 100):
@@ -95,12 +102,10 @@ def train_agent(agent, env, training_iters, display_step = 100):
 
           # Update Statistics
           steps.append(step) ; loss.append(l) ; acc.append(a)
-          #rho.append(s['rho_mean']) ; emb.append(np.mean(s['embedding']))
-          #pq.append(np.mean(s['pq_mean_sq']))
  
       # Display Statistics
       if (step) % display_step == 0:
-         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100# ; r = np.mean(pq[last_update:])
+         l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100
          tqdm.write("{}, {:>7}/{}it | loss: {:4.2f}, acc: {:4.2f}%".format(time.strftime("%H:%M:%S"), step, training_iters, l, a ))
          last_update = np.size(loss)
 
@@ -122,7 +127,6 @@ def test_agent(agent, env, test_iters=100):
       state, label, metadata = env.getBatch(64, True)
       l, a, s = agent.test(state, label)
       loss.append(l) ; acc.append(a)
-      #pq.append(s['pq_mean_sq'])
 
     loss_ = np.mean(loss) ; acc_ = np.mean(acc)
     stats = { 'accuracy': acc_, 'loss': loss_ }
@@ -133,8 +137,8 @@ def test_agent(agent, env, test_iters=100):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--file', type=str, default='stats.npy',
-                       help='Filename to save statistice to.')
+    parser.add_argument('-f', '--file', type=str, default='results.npy',
+                       help='Filename to save statistics to.')
 
     args = parser.parse_args()
 

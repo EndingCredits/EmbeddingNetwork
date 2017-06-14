@@ -12,7 +12,7 @@ class shapeGenerator():
         self.point_noise_scale = params['point_noise_scale']
         self.shape_noise_scale = params['shape_noise_scale']
         self.scale_min = params['scale_min']
-        self.point_dist = params['point_dist']
+        self.point_dist = params['uniform_point_distribution']
 
         self.dataset_size = params['dataset_size']
         self.initial_seed = params['initial_seed']
