@@ -22,26 +22,21 @@ def main(_):
 
     # Set up agents
     agent_params = {
-        'agent_type': 'simple',
-        'input_size': 17,
-        'num_classes': 10,
-        'embedding_size': 256,
+        'agent_type': 'PCL',
+        'input_size': 3,
+        'num_classes': 40,
         'learning_rate': 0.0001,
-        'rho_target': 0.05,
-        'sparsity_reg': 0.0,
-        'seed': 123
+        'optimizer': 'adamax'
     }
 
     Agent(sess, agent_params)
 
-    env_params = { 'train_file': 'ModelNet40train_100.npy',
-                   'test_file': 'ModelNet40test_100.npy',
+    env_params = { 'train_file': 'data/ModelNet40train_100.npy',
+                   'test_file': 'data/ModelNet40test_100.npy',
                    'seed': 1234 }
 
     agent = Agent(sess, agent_params)
     env = ModelDataset(env_params)
-
-    print env.size
 
     # Initialise variables
     sess.run(tf.global_variables_initializer())

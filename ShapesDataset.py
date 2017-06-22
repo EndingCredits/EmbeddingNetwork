@@ -3,35 +3,50 @@ from __future__ import division
 import numpy as np
 
 class shapeGenerator():
+    params = {
+        'num_points': 15,
+        'num_extra_points': 10,
+        'uniform_point_distribution': False,
+        'point_noise_scale': 0.1,
+        'shape_noise_scale': 0.5,
+        'scale_min': 0.1,
+        'initial_seed': 1234,
+        'dataset_size': 100000
+    }
+
     def __init__(self, params):
+        self.params.update(params)
 
-        self.params = params
+        self.num_points = self.params['num_points']
+        self.num_extra_points = self.params['num_extra_points']
+        self.point_noise_scale = self.params['point_noise_scale']
+        self.shape_noise_scale = self.params['shape_noise_scale']
+        self.scale_min = self.params['scale_min']
+        self.point_dist = self.params['uniform_point_distribution']
 
-        self.num_points = params['num_points']
-        self.num_extra_points = params['num_extra_points']
-        self.point_noise_scale = params['point_noise_scale']
-        self.shape_noise_scale = params['shape_noise_scale']
-        self.scale_min = params['scale_min']
-        self.point_dist = params['uniform_point_distribution']
-
-        self.dataset_size = params['dataset_size']
-        self.initial_seed = params['initial_seed']
+        self.dataset_size = self.params['dataset_size']
+        self.initial_seed = self.params['initial_seed']
         self.initial_seed_cv = self.initial_seed + self.dataset_size
         self.num_samples = 0         #Number of samples taken.
         self.num_samples_cv = 0      #Number of samples taken for validation.
 
+    def elementSize(self):
+        return 2
+    
+    def numClasses(self):
+        return 3
 
     def getBatch(self, batch_size, validation=False):
         shapes = []
         labels = []
         metadata = []
-	for i in range(batch_size):
-            shape, label, data = self.getShape(self.get_seed(validation))
+        for i in range(batch_size):
+            shape, label, data = self._get_shape(self._get_seed(validation))
             shapes.append(shape) ; labels.append(label) ; metadata.append(data)
         return shapes, labels, metadata
 
 
-    def getShape(self, seed):
+    def _get_shape(self, seed):
 
         np.random.seed(seed)        
 
@@ -61,9 +76,9 @@ class shapeGenerator():
         for i in range(N):
           # Get point from position and shape type
           if self.point_dist == True: 
-              x, y = self.getPoint(shape_type, pos[i])
+              x, y = self._get_point(shape_type, pos[i])
           else:
-              x, y = self.getPoint(shape_type, float(i)/N)
+              x, y = self._get_point(shape_type, float(i)/N)
 
           # Add noise
           x += noise_x[i] ; y += noise_y[i]
@@ -85,7 +100,7 @@ class shapeGenerator():
         data = np.array([scale, x_shift, y_shift])
         return shape, label, data
 
-    def getPoint(self, shape_type, percent):
+    def _get_point(self, shape_type, percent):
       if shape_type == 0: #"circle"
         x = np.cos(percent * 2 * np.pi)
         y = np.sin(percent * 2 * np.pi)
@@ -129,7 +144,7 @@ class shapeGenerator():
         x *= 2 ; y *= 2
         return x,y
 
-    def get_seed(self, validation=False):
+    def _get_seed(self, validation=False):
         if validation:
             offset = self.num_samples_cv
             self.num_samples_cv += 1

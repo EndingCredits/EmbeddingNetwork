@@ -21,31 +21,17 @@ def main(_):
     summaries = []
     filename = args.file
 
-    # Set up agents
+    # Set up agent
     runs = []
     for sd in [ 123, 123456, 1234567 ]:
-     for e in [ 256 ]:
-      for n in [ False ]:
-       for ty in [ 'embedding' ]:
         agent_params = {
-            'agent_type': ty,
+            'agent_type': 'default',
             'input_size': 2,
             'num_classes': 3,
-            'embedding_size': e,
-            'learning_rate': 0.0025,
-            'rho_target': 0.05,
-            'sparsity_reg': 0.0,
-            'seed': sd
+            'embedding_size': 256
         }
 
-        env_params = { 'num_points': 15,
-                   'uniform_point_distribution': n,
-                   'num_extra_points': 10,
-                   'point_noise_scale': 0.1,
-                   'shape_noise_scale': 0.5,
-                   'scale_min': 0.1,
-                   'initial_seed': 1234,
-                   'dataset_size': 100000 }
+        env_params = { }
 
         run = { 'agent_params': agent_params,
                 'env_params': env_params }

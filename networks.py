@@ -91,17 +91,17 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     num_layers_e = len(d_e)-1
 
     # Set up params
-    with tf.variable_scope("params_agent"+str(self.agent_num)) as vs:
+    with tf.variable_scope("params") as vs:
         w_e = [None]*num_layers_e
         b_e = [None]*num_layers_e
         for i in range(num_layers_e):
-            w_e[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1, seed=self.get_seed()), name='emb_c_w'+str(i+1))
+            w_e[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1), name='emb_c_w'+str(i+1))
             b_e[i] = tf.Variable(tf.zeros(d_e[i+1]), name='emb_b'+str(i+1))
 
         w_n = [None]*num_layers
         b_n = [None]*num_layers
         for i in range(num_layers):
-            w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1, seed=self.get_seed()), name='net_w'+str(i+1))
+            w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1), name='net_w'+str(i+1))
             b_n[i] = tf.Variable(tf.zeros(d[i+1]), name='net_b'+str(i+1))
 
     # Build graph
@@ -109,12 +109,12 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     # Embedding network
     elems = state
     for i in range(num_layers_e):
-        pool = tf.matmul(mask_and_pool(elems, mask), w_e[i])
+        pool = tf.matmul(layers.mask_and_pool(elems, mask), w_e[i])
         conv = tf.nn.conv1d(elems, [w_e[i]], stride=1, padding="SAME")
         elems = tf.nn.tanh(tf.reshape(pool,[-1,1,d_e[i+1]]) - conv + b_e[i])
     
     # Pool
-    embed = mask_and_pool(elems, mask)
+    embed = layers.mask_and_pool(elems, mask)
 
     # Prediction network
     fc = tf.nn.dropout(embed, keep_prob)

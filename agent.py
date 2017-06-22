@@ -8,16 +8,25 @@ import networks
 
 class Agent():
 
+    hyperparams = {
+        'agent_type': 'default',
+        'input_size': 2,
+        'num_classes': 3,
+        'learning_rate': 0.0025,
+        'optimizer': 'adam',
+        'seed': 123
+    }
+
     def __init__(self, tensorflow_session, hyperparams):
 
-        self.hyperparams = hyperparams
-        self.net_type = hyperparams['agent_type']          # Type of network to use
-        self.n_input = hyperparams['input_size']           # Number of features in each element
-        self.n_actions = hyperparams['num_classes']        # Number of output values
-        self.e_layer_size = hyperparams['embedding_size']  # Size of embedding layer
-        self.learning_rate = hyperparams['learning_rate']  # Learning Rate
-        self.rho_target = hyperparams['rho_target']        # Target average activation
-        self.sparsity_reg = hyperparams['sparsity_reg']    # Strength of sparsity regularisation
+        self.hyperparams.update(hyperparams)
+        
+        self.net_type = self.hyperparams['agent_type']          # Type of network to use
+        self.n_input = self.hyperparams['input_size']           # Number of features in each element
+        self.n_actions = self.hyperparams['num_classes']        # Number of output values
+        self.learning_rate = self.hyperparams['learning_rate']  # Learning Rate
+        self.optimiser_type = self.hyperparams['optimizer']     # Optimiser
+        self.agent_seed = self.hyperparams['seed']              # Initial Seed
 
         # Tensorflow variables
         self.session = tensorflow_session
@@ -29,9 +38,9 @@ class Agent():
         self.keep_prob = tf.Variable(0.5, trainable=False)
 
         # Get Network
-        if self.net_type == 'embedding':
+        if self.net_type == 'default':
             embedding, _ = networks.set_network(self.state, self.masks,
-                [[256, self.e_layer_size]] )
+                [[256, 256]] )
             final, _ = networks.fc_network(embedding, [128, self.n_actions],
                 keep_prob = self.keep_prob )
             self.pred = tf.nn.softmax(final)
@@ -64,7 +73,14 @@ class Agent():
 
         # Optimiser
         loss = self.cross_entropy
-        optimiser = tf.train.AdamOptimizer(self.learning_rate)
+        if self.optimiser_type == 'adam':
+            optimiser = tf.train.AdamOptimizer(self.learning_rate)
+        elif self.optimiser_type == 'adamax':
+            from adamax import AdamaxOptimizer
+            optimiser = tf.train.AdamOptimizer(self.learning_rate)
+        else:
+            print "Invalid Optimizer Type!"            
+
         self.compute_grads = optimiser.compute_gradients(loss)
         self.apply_grads = optimiser.apply_gradients(self.compute_grads)
 
@@ -109,8 +125,6 @@ class Agent():
         statistics = { }
 
         return cross_entrophy, accuracy, statistics
-
-
 
 
 
