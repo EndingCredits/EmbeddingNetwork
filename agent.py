@@ -49,6 +49,10 @@ class Agent():
             self.pred, self.weights = networks.PCL_network(self.state, self.masks,
                 [self.n_input,256,256,256], [256,256,self.n_actions],
                 keep_prob = self.keep_prob )
+        
+        elif self.net_type == 'pointnet':
+            self.pred, self.weights = networks.point_network(self.state, self.masks,
+                keep_prob = self.keep_prob )
 
         elif self.net_type == 'RNN':
             self.pred, _ = networks.rnn_network(self.state, self.seq_len)

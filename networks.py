@@ -43,6 +43,7 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
     return out, params
     
     
+    
 def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu, keep_prob=1.0):
     params = []
     last_layer=len(layer_sizes)-1
@@ -60,6 +61,7 @@ def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu
 
     # Returns the network output and parameters
     return out, params
+
 
 
 def rnn_network(state, seq_len, d = [2,128,128,3]):
@@ -82,6 +84,7 @@ def rnn_network(state, seq_len, d = [2,128,128,3]):
 
     # Returns the network output, parameters, and the last layer as placeholder
     return prediction, _ #tf.get_collection(tf.GraphKeys.VARIABLES, scope=vs.name)
+    
     
 
 def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes = [256,40,3], keep_prob=0.5):
@@ -127,8 +130,56 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     # Regularisation for sparsity (average activation)
     rho = embed
 
-    # Returns the network output, parameters, object embeddings, and representation layer
+    # Returns the network output, parameters
     return predict, w_e + b_e + w_n + b_n
+    
+    
+    
+def point_network(state, mask, keep_prob=0.5):
+# This replicates the full network of http://stanford.edu/~rqi/pointnet/
+
+    batch_size = state.get_shape()[0]
+    num_point = state.get_shape()[1]
+
+    # Build graph
+
+    elems = state
+    
+    # First Transform Net
+    layer = elems
+    layer, _ = layers.invariant_layer(128, layer, name='tf_net_1_in')
+    layer = layers.mask_and_pool(layer, mask)
+    layer = tf.nn.tanh(layer)
+    mat, _ = layers.fc_layer(3*3, layer, name='tf_net_1_out')
+    mat = tf.reshape(mat, [-1, 3, 3])
+    mat += tf.constant(np.eye(3), dtype=tf.float32)
+    
+    layer = tf.matmul(elems, mat)
+    
+    # First block
+    elems, _ = layers.invariant_layer(64, layer, name='block_1')
+    
+    # Second Transform Net
+    layer = elems
+    layer, _ = layers.invariant_layer(128, layer, name='tf_net_2_in')
+    layer = layers.mask_and_pool(layer, mask)
+    layer = tf.nn.tanh(layer)
+    mat, _ = layers.fc_layer(64*64, layer, name='tf_net_2_out')
+    mat = tf.reshape(mat, [-1, 64, 64])
+    mat += tf.constant(np.eye(64), dtype=tf.float32)
+    layer = tf.matmul(elems, mat)
+    
+    # Second block
+    elems, _ = layers.invariant_layer(256, layer, name='block_2')
+        
+    # Fully connected
+    embed = layers.mask_and_pool(elems, mask)
+    final, _ = layers.fc_layer(40, embed, name='out')
+    
+    predict = tf.nn.softmax(final)
+
+    # Returns the network output, parameters
+    return predict, []
 
 
 
