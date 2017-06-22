@@ -137,6 +137,7 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     
 def point_network(state, mask, keep_prob=0.5):
 # This replicates the full network of http://stanford.edu/~rqi/pointnet/
+# NB: Simplified version!
 
     batch_size = state.get_shape()[0]
     num_point = state.get_shape()[1]
