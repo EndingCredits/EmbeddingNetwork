@@ -2,4 +2,6 @@
 misc/
 utils/
 images/
-data/*_1000.npy
+data/*.npy
+!data/ModelNet40train_100.npy
+!data/ModelNet40test_100.npy

@@ -22,10 +22,10 @@ def main(_):
 
     # Set up agents
     agent_params = {
-        'agent_type': 'PCL',
+        'agent_type': 'pointnet',
         'input_size': 3,
         'num_classes': 40,
-        'learning_rate': 0.0001,
+        'learning_rate': 0.001,
         'optimizer': 'adamax'
     }
 

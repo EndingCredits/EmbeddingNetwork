@@ -6,7 +6,7 @@ from tensorflow.python.ops import rnn
 
 import layers
 
-def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.relu, use_initial=False, skip_connections=False):
+def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.relu, use_initial=False, skip_connections=False, name='set_network'):
     params = []
     contexts = []
     
@@ -19,7 +19,7 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
     for i, block in enumerate(layer_sizes):
         for j, layer_size in enumerate(block):
             cont = context if j==0 and not i==0 else None
-            layer, p = layers.invariant_layer(layer_size, layer, context=cont, name='l' + str(i) + '_'  + str(j))
+            layer, p = layers.invariant_layer(layer_size, layer, context=cont, name=name+'_l' + str(i) + '_'  + str(j))
             layer = activation_function(layer)
             params = params + p
 
@@ -44,13 +44,13 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
     
     
     
-def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu, keep_prob=1.0):
+def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu, keep_prob=1.0, name='network'):
     params = []
     last_layer=len(layer_sizes)-1
     
     layer = state
     for i, layer_size in enumerate(layer_sizes):
-        layer, p = layers.fc_layer(layer_size, layer, name='l_' + str(i))
+        layer, p = layers.fc_layer(layer_size, layer, name=name+'_l_' + str(i))
         params = params + p
         if i!=last_layer:
             layer = activation_function(layer)
@@ -72,7 +72,7 @@ def rnn_network(state, seq_len, d = [2,128,128,3]):
     for i in range(num_layers): lstm_cells.append(rnn.rnn_cell.GRUCell(d[i+1], activation=tf.nn.relu))
     multi_cell = rnn.rnn_cell.MultiRNNCell(lstm_cells)
 
-    with tf.variable_scope("params_agent"+str(self.agent_num)) as vs:
+    with tf.variable_scope("params") as vs:
       w = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out')
       w_ = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out_')
       b = tf.Variable(tf.zeros(d[-1]), name='b_out')
@@ -137,7 +137,6 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     
 def point_network(state, mask, keep_prob=0.5):
 # This replicates the full network of http://stanford.edu/~rqi/pointnet/
-# NB: Simplified version!
 
     batch_size = state.get_shape()[0]
     num_point = state.get_shape()[1]
@@ -147,35 +146,38 @@ def point_network(state, mask, keep_prob=0.5):
     elems = state
     
     # First Transform Net
-    layer = elems
-    layer, _ = layers.invariant_layer(128, layer, name='tf_net_1_in')
-    layer = layers.mask_and_pool(layer, mask)
-    layer = tf.nn.tanh(layer)
-    mat, _ = layers.fc_layer(3*3, layer, name='tf_net_1_out')
-    mat = tf.reshape(mat, [-1, 3, 3])
-    mat += tf.constant(np.eye(3), dtype=tf.float32)
-    
-    layer = tf.matmul(elems, mat)
+    tranform = elems
+    tranform, _ = set_network(tranform, mask, [[64, 128, 256]], name='tf_net_1a')
+    tranform, _ = fc_network(tranform, [256, 128, 3*3], name='tf_net_1b')
+    tranform = tf.reshape(tranform, [-1, 3, 3])
+    tranform += tf.constant(np.eye(3), dtype=tf.float32)
+    elems = tf.matmul(elems, tranform)
     
     # First block
-    elems, _ = layers.invariant_layer(64, layer, name='block_1')
+    elems, _ = layers.invariant_layer(64, elems, name='block_1a')
+    elems = tf.nn.tanh(elems)
+    elems, _ = layers.invariant_layer(64, elems, name='block_1b')
+    elems = tf.nn.tanh(elems)
     
     # Second Transform Net
-    layer = elems
-    layer, _ = layers.invariant_layer(128, layer, name='tf_net_2_in')
-    layer = layers.mask_and_pool(layer, mask)
-    layer = tf.nn.tanh(layer)
-    mat, _ = layers.fc_layer(64*64, layer, name='tf_net_2_out')
-    mat = tf.reshape(mat, [-1, 64, 64])
-    mat += tf.constant(np.eye(64), dtype=tf.float32)
-    layer = tf.matmul(elems, mat)
+    tranform = elems
+    tranform, _ = set_network(tranform, mask, [[64, 128, 256]], name='tf_net_2a')
+    tranform, _ = fc_network(tranform, [256, 128, 64*64], name='tf_net_2b')
+    tranform = tf.reshape(tranform, [-1, 64, 64])
+    tranform += tf.constant(np.eye(64), dtype=tf.float32)
+    elems = tf.matmul(elems, tranform)
     
     # Second block
-    elems, _ = layers.invariant_layer(256, layer, name='block_2')
+    elems, _ = layers.invariant_layer(64, elems, name='block_2a')
+    elems = tf.nn.tanh(elems)
+    elems, _ = layers.invariant_layer(256, elems, name='block_2b')
+    elems = tf.nn.tanh(elems)
+    elems, _ = layers.invariant_layer(256, elems, name='block_3c')
+    elems = tf.nn.tanh(elems)
         
     # Fully connected
     embed = layers.mask_and_pool(elems, mask)
-    final, _ = layers.fc_layer(40, embed, name='out')
+    final, _ = fc_network(embed, [256, 256, 40], name='out', keep_prob=keep_prob)
     
     predict = tf.nn.softmax(final)
 
