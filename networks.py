@@ -15,7 +15,7 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
 
     # Embedding network
     layer = initial_elems
-
+    
     for i, block in enumerate(layer_sizes):
         for j, layer_size in enumerate(block):
             cont = context if j==0 and not i==0 else None
@@ -23,7 +23,8 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
             layer = activation_function(layer)
             params = params + p
 
-        context = layers.mask_and_pool(layer, mask)
+        context = layers.mask_and_pool(layer, mask, 'MAX')
+        #context = layers.att_pool(256, layer, mask, name=name+"_attn_"+str(i))
 
         if skip_connections:
             contexts.append(context)
@@ -87,7 +88,7 @@ def rnn_network(state, seq_len, d = [2,128,128,3]):
     
     
 
-def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes = [256,40,3], keep_prob=0.5):
+def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes = [256,40], keep_prob=0.5):
 # This replicates the full network of https://arxiv.org/abs/1611.04500
     d = net_layer_sizes ; d_e = emb_layer_sizes
     num_layers = len(d)-1
@@ -185,7 +186,74 @@ def point_network(state, mask, keep_prob=0.5):
     return predict, []
 
 
+def attention_network(state, mask, layer_sizes=[128,128,128], activation_function=tf.nn.relu, name='attention_network'):
+    import common_attention
+    
+    # Embedding network
+    layer = state
+    
+    # Get bias from mask
+    bias = tf.expand_dims((1 - mask)* -1e9, 1)
+
+    for i, layer_size in enumerate(layer_sizes):
+        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
+        layer += common_attention.multihead_attention(layer, None, bias, 32, 32, layer_size, 8, 0.0, 
+                   window_size=None, name=name+'_attn_' + str(i))
+        layer = activation_function(layer)
+
+    out = layers.mask_and_pool(layer, mask)
+
+    # Returns the network output and parameters
+    return out, []
 
 
+def test_network_(state, mask, activation_function=tf.nn.relu, name='test_network'):
+    params = []
+    layer_sizes = [256, 256]
+    
+    
+    # Embedding network
+    initial_elems = state
+
+    # Embedding network
+    layer = initial_elems
+    
+    for i, layer_size in enumerate(layer_sizes):
+        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
+        layer = activation_function(layer)
+        params = params + p
+
+    query = layers.mask_and_pool(layer, mask, 'AVR')
+    #context = layers.att_pool(256, layer, mask, query)
+    #query = layers.test_max_pool(layer, mask)
+    
+    out = query# context + query
+    
+    # Returns the network output and parameters
+    return out, params
+    
+    
+def test_network(state, mask, name='test_network'):
+    params = []
+    layer_sizes = [128, 128, 128]
+
+    # Embedding network
+    initial_elems = state
+
+    # Embedding network
+    layer = initial_elems
+    
+    for i, layer_size in enumerate(layer_sizes):
+        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
+        cont, _ = layers.relation_layer(32, layer, mask, name=name+'_rel' + str(i))
+        cont2, _ = layers.invariant_layer(layer_size, cont, name=name+'_l2' + str(i))
+        layer = tf.nn.relu(layer + cont2)
+
+    query = layers.mask_and_pool(layer, mask, 'MAX')
+    
+    out = query
+    
+    # Returns the network output and parameters
+    return out, params
 
 

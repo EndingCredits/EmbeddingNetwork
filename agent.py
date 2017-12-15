@@ -12,8 +12,8 @@ class Agent():
         'agent_type': 'default',
         'input_size': 2,
         'num_classes': 3,
-        'learning_rate': 0.0025,
-        'optimizer': 'adam',
+        'learning_rate': 0.00025,
+        'optimizer': 'adamax',
         'seed': 123
     }
 
@@ -40,8 +40,9 @@ class Agent():
         # Get Network
         if self.net_type == 'default':
             embedding, _ = networks.set_network(self.state, self.masks,
-                [[256, 256]] )
-            final, _ = networks.fc_network(embedding, [128, self.n_actions],
+                [[64, 64], [64,64]] )
+            #embedding, _ = networks.test_network(self.state, self.masks)
+            final, _ = networks.fc_network(embedding, [256, self.n_actions],
                 keep_prob = self.keep_prob )
             self.pred = tf.nn.softmax(final)
 
@@ -53,6 +54,12 @@ class Agent():
         elif self.net_type == 'pointnet':
             self.pred, self.weights = networks.point_network(self.state, self.masks,
                 keep_prob = self.keep_prob )
+                
+        elif self.net_type == 'attention':
+            embedding, _ = networks.attention_network(self.state, self.masks)
+            final, _ = networks.fc_network(embedding, [256, self.n_actions],
+                keep_prob = self.keep_prob )
+            self.pred = tf.nn.softmax(final)
 
         elif self.net_type == 'RNN':
             self.pred, _ = networks.rnn_network(self.state, self.seq_len)
@@ -81,7 +88,11 @@ class Agent():
             optimiser = tf.train.AdamOptimizer(self.learning_rate)
         elif self.optimiser_type == 'adamax':
             from adamax import AdamaxOptimizer
-            optimiser = tf.train.AdamOptimizer(self.learning_rate)
+            optimiser = AdamaxOptimizer(self.learning_rate)
+        elif self.optimiser_type == 'adamirror':
+            from adamirror import AdamirrorOptimizer
+            optimiser = AdamirrorOptimizer(self.learning_rate)
+            print "Adamirror used"  
         else:
             print "Invalid Optimizer Type!"            
 

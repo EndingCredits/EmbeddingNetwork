@@ -17,21 +17,30 @@ def main(_):
   
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
+    
+    np.set_printoptions(threshold='nan', precision=3, suppress=True)
 
     summaries = []
     filename = args.file
 
     # Set up agent
     runs = []
-    for sd in [ 123, 123456, 1234567 ]:
+    for sd in [ 123 ]:
         agent_params = {
             'agent_type': 'default',
             'input_size': 2,
             'num_classes': 3,
-            'embedding_size': 256
+            'embedding_size': 256,
+            'learning_rate': 0.005
         }
 
-        env_params = { }
+        env_params = {
+            #'num_points': 20,
+            #'num_extra_points': 0,
+            #'point_noise_scale': 0.05,
+            #'shape_noise_scale': 0.3,
+            #'scale_min': 0.5,
+        }
 
         run = { 'agent_params': agent_params,
                 'env_params': env_params }
@@ -41,6 +50,26 @@ def main(_):
     for run in runs:
       # Launch the graph
       with tf.Session(config=config) as sess:
+        print "Test"
+        x = [ [[ 1.0, 1.0, 0.0, 0.0 ],
+               [ 1.0, 2.0, 0.0, 0.0 ],
+               [ 1.0, 3.0, 0.0, 0.0 ],
+               [ 1.0, 4.0, 0.0, 0.0 ]] ]
+        x_ = tf.Variable(x)
+        
+        mask = [ [[1.0],
+                  [1.0],
+                  [1.0],
+                  [0.0]] ]
+        mask_ = tf.Variable(mask)
+        
+        import layers
+        out = layers.mask_and_pool(x_, mask_, pool_type='COMP')
+      
+        sess.run(tf.global_variables_initializer())
+        result = sess.run( out );
+        print result
+      
         agent_params = run['agent_params'] ; env_params = run['env_params']
           
         print "Building agent with params: "
@@ -51,7 +80,7 @@ def main(_):
         env = shapeGenerator(env_params)
         sess.run(tf.global_variables_initializer())
           
-        stats = train_agent(agent, env, 1000)
+        stats = train_agent(agent, env, 10000)
         test_stats = test_agent(agent, env)
 
         summary = { 'agent_params': agent.hyperparams, 'env_params': env.params, 'step': stats['step'], 'accuracy': stats['accuracy'],
@@ -94,6 +123,10 @@ def train_agent(agent, env, training_iters, display_step = 100):
          l = np.mean(loss[last_update:]) ; a = np.mean(acc[last_update:]) * 100
          tqdm.write("{}, {:>7}/{}it | loss: {:4.2f}, acc: {:4.2f}%".format(time.strftime("%H:%M:%S"), step, training_iters, l, a ))
          last_update = np.size(loss)
+         
+         for v in tf.global_variables():
+            if "blend_feats" in v.name and not "Adamax" in v.name:
+                tqdm.write("{}: {}".format(v.name, v.eval()))
 
     stats = { 'step': steps, 'accuracy': acc, 'loss': loss, 'pq_mean': pq }
 
