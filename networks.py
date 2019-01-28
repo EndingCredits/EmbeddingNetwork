@@ -4,9 +4,369 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import rnn
 
-import layers
+from layers import * # sorry
 
-def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.relu, use_initial=False, skip_connections=False, name='set_network'):
+################################################################################
+############################## Standard networks ###############################
+################################################################################
+
+def feedforward(x, layers = [128], name="feedforward", **kwargs):
+    """
+    Concatenates a number of linear layers.
+    """
+    with tf.variable_scope(name):
+        for i, layer in enumerate(layers):
+            x = linear(x, layer, name='layer_' + str(i), **kwargs)
+
+    return x
+
+
+def statistic_network(x,
+                      mask=None,
+                      embedding_layers=[128]*2,
+                      output_layers=[128]*2,
+                      pool_type='max',
+                      activation_fn=tf.nn.relu,
+                      initializer=tf.truncated_normal_initializer(0, 0.02),
+                      name="statistic_network"):
+    """
+    Simple statistic network which transforms inputs, pools them, and transforms
+    result. Can also be used as a component in other networks.
+    """
+
+    # Rename for brevity
+    act_fn = activation_fn
+
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    with tf.variable_scope(name):
+
+        # Embedding Part:
+        x = feedforward(x, embedding_layers, name="embedding", 
+                        activation=act_fn, kernel_initializer=initializer)
+        
+        # Pool final elements to get input to task network
+        x = pool(x, mask, pool_type=pool_type, keepdims=False)
+        
+        
+        # Fully connected output (task) part:
+        x = feedforward(x, output_layers, name="output", 
+                        activation=act_fn, kernel_initializer=initializer)
+
+    return x
+    
+
+def kary_network(x,
+                 mask=None,
+                 embedding_layers=[32]*2,
+                 output_layers=[128]*2,
+                 pool_type='max',
+                 k=3,
+                 activation_fn=tf.nn.relu,
+                 initializer=tf.truncated_normal_initializer(0, 0.02),
+                 name="kary_network"):
+    """
+    Simple statistic network which transforms inputs, pools them, and transforms
+    result. Can also be used as a component in other networks.
+    """
+
+    # Rename for brevity
+    act_fn = activation_fn
+
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    with tf.variable_scope(name):
+
+        # Embedding Part:
+        x = kary_pooling(x, k, embedding_layers, num_samples = 50, mask = mask,
+          pool_type=pool_type,
+                         name="kary_pooling", activation=act_fn,
+                         initializer=initializer)
+        
+        # Fully connected output (task) part:
+        x = feedforward(x, output_layers, name="output", 
+                        activation=act_fn, kernel_initializer=initializer)
+
+    return x
+
+################################################################################
+############################### Implementations ################################
+################################################################################
+
+
+def deep_sets_network(x,
+                      mask=None,
+                      embedding_layers = [256,256,256],
+                      output_layers = [256],
+                      use_equivariant=True,
+                      initializer=tf.truncated_normal_initializer(0, 0.02),
+                      activation_fn=tf.nn.relu,
+                      name="deep_sets_network"):
+
+    """
+    The network of https://arxiv.org/abs/1611.04500. N.B, the parameters given
+    here are different from those in the paper
+    
+    It consists of a number of linear element-wise transformations interspersed
+    with 'submax' (i.e. f(x_i) = x_i - max_j{x_j}) equivariant transformations.
+    
+    This is then pooled to get a single vector representation of all objects and
+    used as input for a final 'task' network.
+    """
+    
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    with tf.variable_scope(name):
+        # Embedding Part:
+        
+        # Do the first layer without equivariant transform
+        x = linear(x, embedding_layers[0], name='layer_' + str(0))
+        
+        # Do the rest of the embedding layers with 'submax' transform
+        for i, layer in enumerate(embedding_layers[1:]):
+            if use_equivariant:
+                x = equiv_submax(x, mask)
+            x = linear(x, layer, name='layer_' + str(i+1),
+                activation=activation_fn, kernel_initializer=initializer )
+        
+        # Pool final elements to get input to task network
+        x = pool(x, mask)
+        
+        # Fully connected (task) part:
+        x = feedforward(x, output_layers, name="output", 
+                       activation=activation_fn, kernel_initializer=initializer)
+    
+    # Returns the network output
+    return x
+
+def deep_sets_paper(x, mask=None, name="deep_sets_network"):
+    # The parameters used in https://arxiv.org/abs/1611.04500.
+    # N.B: No dropout used!
+    return deep_sets_network(x, mask , name=name, activation_fn=tf.nn.tanh)
+
+
+def pointnet(x, mask=None, name="pointnet"):
+    """
+    This replicates the full network of http://stanford.edu/~rqi/pointnet/
+    """
+
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    def tnet(x, emb_layers, out_layers, name):
+        with tf.variable_scope(name):
+            context = statistic_network(x, mask, emb_layers, out_layers,
+                                        activation_fn=tf.nn.relu)
+            return transform_layer(x, context)
+
+    # Build graph
+    with tf.variable_scope(name):
+        # Input T-Net
+        x = tnet(x, [64, 128, 256], [256, 128], "input_tnet")
+        # First block
+        x = feedforward(x, [64, 64], name="block_0", activation=tf.nn.tanh)
+        
+        #Second T-Net
+        x = tnet(x, [64, 128, 256], [256, 128], "tnet_1")
+        # Second block
+        x = feedforward(x, [64,256,256], name="block_1", activation=tf.nn.tanh)
+            
+        # Fully connected
+        x = pool(x, mask)
+
+        # Output part
+        x = feedforward(x, [256, 256], name="output")
+    
+    return x
+
+
+def object_embedding_network(x,
+                             mask=None,
+                             skip_style=False,
+                             embedding_layers=[[128]*2]*2,
+                             output_layers=[128]*3,
+                             initializer=
+                                  tf.truncated_normal_initializer(0, 0.02),
+                             activation_fn=tf.nn.relu,
+                             name="OENv0.5"):
+    """
+    The original embedding network used for object-based RL.
+    
+    Rather than using equivariant 'submax' layers this uses a 'context
+    concatenation' approach, where the context (given by the max_pool) is
+    concatenated with each element at the input to each block of layers.
+    
+    Rough diagram:
+    
+        x_i           Single element
+      ___|___
+     |       |
+     |--128--|        1st 'block'
+     |--128--|
+     |_______|
+      ___|___        
+     |       |
+     |    max_pool    
+     |       |        Equivariant part
+  f(x_i) o max_j x_j
+      ___|___
+     |       |
+     |--128--|        2nd block
+     |--128--|
+     |_______|
+         |
+        ...
+        
+    This is then pooled to get a single vector representation of all objects and
+    used as input for a final 'task' network.
+    """
+    
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    # Build graph:
+    with tf.variable_scope(name):
+    
+        # Embedding Part:
+        initial_elems = x
+        for i, block in enumerate(embedding_layers):
+          with tf.variable_scope("block_"+str(i)):
+            if skip_style:
+                # If skip-style we use the original elements for our input
+                x = initial_elems
+            for j, layer in enumerate(block):
+                x = linear(x, layer, name='layer_' + str(j),
+                           kernel_initializer=initializer)
+                if j==0 and not i==0:
+                    # If start of the next block we add in context
+                    x = x + linear(c, layer, name='context',
+                                   kernel_initializer=initializer)
+                x = activation_fn(x)
+
+            c = pool(x, mask, keepdims=True) # pool to get context
+
+
+        # Fully connected (task) part:
+        x = tf.squeeze(c, axis=-2)
+        x = feedforward(x, output_layers, name="output", 
+                        activation=act_fn, kernel_initializer=initializer)
+
+    # Returns the network output
+    return x
+ 
+
+
+def relation_network(x,
+                     mask=None,
+                     num_blocks=2,
+                     key_size=64,
+                     value_size=128,
+                     num_heads=4,
+                     name="relation_network"):
+
+    """
+    A relational network using qkv self-attention
+    
+    Mimics the architecture given in Relational Deep Reinforcement Learning. 
+    """
+
+
+    # Keeping track of which initilizer and activation funcs are used
+    initializer = tf.truncated_normal_initializer(0, 0.02)
+    activation_fn = tf.nn.relu
+    
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+    
+    # Embedding Part:
+
+    # Add a number of attention blocks
+    for i in range(num_blocks):
+        x_att = attn_qkv(x, x, key_size, value_size, num_heads=num_heads,
+                         mask=mask, name="attention_"+str(i), use_mlp_attn=False)
+        #x_att = attn_mlp(x, x, key_size, value_size,
+        #                  mask=mask, name="attention_"+str(i) )
+        x_ff = feedforward(x, [value_size]*2, name="feedforward_"+str(i), 
+                   activation=activation_fn, kernel_initializer=initializer)
+        x = x_att + x_ff
+    
+    # Pool final elements to get input to task network
+    x = pool(x, mask)
+
+    # Fully connected (task) part:
+    x = feedforward(x, [128]*2, name="output", 
+                   activation=activation_fn, kernel_initializer=initializer)
+                    
+
+    # Returns the network output
+    return x
+
+def pseudo_relation_network(x,
+                            mask=None,
+                            num_clusters=10,
+                            num_blocks=2,
+                            key_size=64,
+                            value_size=128,
+                            num_heads=4,
+                            name="pseudo_relation_network"):
+
+    """
+    A relational network using qkv self-attention
+    
+    Mimics the architecture given in Relational Deep Reinforcement Learning. 
+    """
+
+
+    # Keeping track of which initilizer and activation funcs are used
+    initializer = tf.truncated_normal_initializer(0, 0.02)
+    activation_fn = tf.nn.relu
+    
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+    
+    # Embedding Part:
+
+    # Add a number of attention blocks
+    for i in range(num_blocks):
+        clusters = tf.get_variable(name="clusters_"+str(i),
+                                   shape=[num_clusters, key_size],
+                                   initializer = tf.random_normal_initializer())
+
+        clusters = tf.tile(tf.expand_dims(clusters,0), [shape_list(x)[0],1,1])
+
+
+        c_att = attn_qkv(clusters, x, key_size, value_size, num_heads=num_heads,
+                    mask=None, name="attention_A."+str(i), use_mlp_attn=False)
+
+        x_att = attn_qkv(x, c_att, key_size, value_size, num_heads=num_heads,
+                    mask=mask, name="attention_B."+str(i), use_mlp_attn=False)
+
+        x_ff = feedforward(x, [value_size]*2, name="feedforward_"+str(i), 
+                   activation=activation_fn, kernel_initializer=initializer)
+        x = x_att + x_ff
+    
+    # Pool final elements to get input to task network
+    x = pool(x, mask)
+
+    # Fully connected (task) part:
+    x = feedforward(x, [128]*2, name="output", 
+                   activation=activation_fn, kernel_initializer=initializer)
+                    
+
+    # Returns the network output
+    return x
+
+################################################################################
+############################### Legacy networks ################################
+################################################################################
+
+
+def __set_network(state, mask, layer_sizes=[[128,256]],
+                  activation_function=tf.nn.relu, use_initial=False,
+                  skip_connections=False, name='set_network'):
     params = []
     contexts = []
     
@@ -45,7 +405,8 @@ def set_network(state, mask, layer_sizes=[[128,256]], activation_function=tf.nn.
     
     
     
-def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu, keep_prob=1.0, name='network'):
+def __fc_network(state, layer_sizes = [256,256,10],
+                 activation_function=tf.nn.relu, keep_prob=1.0, name='network'):
     params = []
     last_layer=len(layer_sizes)-1
     
@@ -65,19 +426,21 @@ def fc_network(state, layer_sizes = [256,256,10], activation_function=tf.nn.relu
 
 
 
-def rnn_network(state, seq_len, d = [2,128,128,3]):
+def __rnn_network(state, seq_len, d = [2,128,128,3]):
     num_layers = len(d)-2
 
     # Build graph
     lstm_cells = []
-    for i in range(num_layers): lstm_cells.append(rnn.rnn_cell.GRUCell(d[i+1], activation=tf.nn.relu))
+    for i in range(num_layers):
+        lstm_cells.append(rnn.rnn_cell.GRUCell(d[i+1], activation=tf.nn.relu))
     multi_cell = rnn.rnn_cell.MultiRNNCell(lstm_cells)
 
     with tf.variable_scope("params") as vs:
       w = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out')
       w_ = tf.Variable(tf.random_normal((d[-2],d[-1]), stddev=0.1), name='w_out_')
       b = tf.Variable(tf.zeros(d[-1]), name='b_out')
-      output, _ = tf.nn.bidirectional_dynamic_rnn(multi_cell, multi_cell, state, sequence_length = seq_len, dtype=tf.float32)
+      output, _ = tf.nn.bidirectional_dynamic_rnn(multi_cell, multi_cell,
+                      state, sequence_length = seq_len, dtype=tf.float32)
 
     last = layers.last_relevant(output[0], seq_len)
     first = layers.last_relevant(output[1], seq_len)
@@ -88,7 +451,8 @@ def rnn_network(state, seq_len, d = [2,128,128,3]):
     
     
 
-def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes = [256,40], keep_prob=0.5):
+def __PCL_network(state, mask, emb_layer_sizes = [3,256,256,256],
+                  net_layer_sizes = [256,40], keep_prob=0.5):
 # This replicates the full network of https://arxiv.org/abs/1611.04500
     d = net_layer_sizes ; d_e = emb_layer_sizes
     num_layers = len(d)-1
@@ -99,13 +463,15 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
         w_e = [None]*num_layers_e
         b_e = [None]*num_layers_e
         for i in range(num_layers_e):
-            w_e[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1), name='emb_c_w'+str(i+1))
+            w_e[i] = tf.Variable(tf.random_normal((d_e[i],d_e[i+1]), stddev=0.1),
+                         name='emb_c_w'+str(i+1))
             b_e[i] = tf.Variable(tf.zeros(d_e[i+1]), name='emb_b'+str(i+1))
 
         w_n = [None]*num_layers
         b_n = [None]*num_layers
         for i in range(num_layers):
-            w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1), name='net_w'+str(i+1))
+            w_n[i] = tf.Variable(tf.random_normal((d[i],d[i+1]), stddev=0.1),
+                         name='net_w'+str(i+1))
             b_n[i] = tf.Variable(tf.zeros(d[i+1]), name='net_b'+str(i+1))
 
     # Build graph
@@ -136,7 +502,7 @@ def PCL_network(state, mask, emb_layer_sizes = [3,256,256,256], net_layer_sizes 
     
     
     
-def point_network(state, mask, keep_prob=0.5):
+def __point_network(state, mask, keep_prob=0.5):
 # This replicates the full network of http://stanford.edu/~rqi/pointnet/
 
     batch_size = state.get_shape()[0]
@@ -184,76 +550,5 @@ def point_network(state, mask, keep_prob=0.5):
 
     # Returns the network output, parameters
     return predict, []
-
-
-def attention_network(state, mask, layer_sizes=[128,128,128], activation_function=tf.nn.relu, name='attention_network'):
-    import common_attention
-    
-    # Embedding network
-    layer = state
-    
-    # Get bias from mask
-    bias = tf.expand_dims((1 - mask)* -1e9, 1)
-
-    for i, layer_size in enumerate(layer_sizes):
-        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
-        layer += common_attention.multihead_attention(layer, None, bias, 32, 32, layer_size, 8, 0.0, 
-                   window_size=None, name=name+'_attn_' + str(i))
-        layer = activation_function(layer)
-
-    out = layers.mask_and_pool(layer, mask)
-
-    # Returns the network output and parameters
-    return out, []
-
-
-def test_network_(state, mask, activation_function=tf.nn.relu, name='test_network'):
-    params = []
-    layer_sizes = [256, 256]
-    
-    
-    # Embedding network
-    initial_elems = state
-
-    # Embedding network
-    layer = initial_elems
-    
-    for i, layer_size in enumerate(layer_sizes):
-        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
-        layer = activation_function(layer)
-        params = params + p
-
-    query = layers.mask_and_pool(layer, mask, 'AVR')
-    #context = layers.att_pool(256, layer, mask, query)
-    #query = layers.test_max_pool(layer, mask)
-    
-    out = query# context + query
-    
-    # Returns the network output and parameters
-    return out, params
-    
-    
-def test_network(state, mask, name='test_network'):
-    params = []
-    layer_sizes = [128, 128, 128]
-
-    # Embedding network
-    initial_elems = state
-
-    # Embedding network
-    layer = initial_elems
-    
-    for i, layer_size in enumerate(layer_sizes):
-        layer, p = layers.invariant_layer(layer_size, layer, name=name+'_l' + str(i))
-        cont, _ = layers.relation_layer(32, layer, mask, name=name+'_rel' + str(i))
-        cont2, _ = layers.invariant_layer(layer_size, cont, name=name+'_l2' + str(i))
-        layer = tf.nn.relu(layer + cont2)
-
-    query = layers.mask_and_pool(layer, mask, 'MAX')
-    
-    out = query
-    
-    # Returns the network output and parameters
-    return out, params
 
 

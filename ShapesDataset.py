@@ -30,6 +30,9 @@ class shapeGenerator():
         self.num_samples = 0         #Number of samples taken.
         self.num_samples_cv = 0      #Number of samples taken for validation.
 
+        self.n_inputs = 2 # 2d points
+        self.n_outputs = 3 # 3 classes
+
     def elementSize(self):
         return 2
     

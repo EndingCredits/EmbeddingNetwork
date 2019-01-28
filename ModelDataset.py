@@ -11,23 +11,25 @@ class ModelDataset():
         self.train_file = self.params['train_file']
         self.test_file = self.params['test_file']
 
-        self.train_data = np.load(self.train_file)[0]
-        self.test_data = np.load(self.test_file)[0]
-        self.size = len(self.train_data['data'])
-        self.size_cv = len(self.test_data['data'])
+        print(self.train_file)
+        self.train_data = np.load(self.train_file, encoding="bytes")[0]
+        self.test_data = np.load(self.test_file, encoding="bytes")[0]
+        print(self.train_data.keys())
+        self.size = len(self.train_data[b'data'])
+        self.size_cv = len(self.test_data[b'data'])
 
         self.initial_seed = self.params['seed']
         self.initial_seed_cv = self.initial_seed
-        self.order = range(self.size)
+        self.order = list(range(self.size))
         np.random.shuffle(self.order)
-        self.order_cv = range(self.size_cv)
+        self.order_cv = list(range(self.size_cv))
         np.random.shuffle(self.order_cv)
 
         self.num_samples = 0         #Number of samples taken.
         self.num_samples_cv = 0      #Number of samples taken for validation.
         
-        self.n_inputs = len(self.test_data['data'][0])
-        self.n_outputs = len(self.test_data['labels'][0])
+        self.n_inputs = len(self.test_data[b'data'][0][0])
+        self.n_outputs = len(self.test_data[b'labels'][0])
 
 
     def elementSize(self):
@@ -49,8 +51,8 @@ class ModelDataset():
     def _get_single(self, num, validation=False, truncate=False):
         if validation==False:
             pos = self.order[num]
-            initial_shape = self.train_data['data'][pos]
-            label = self.train_data['labels'][pos]
+            initial_shape = self.train_data[b'data'][pos]
+            label = self.train_data[b'labels'][pos]
 
             if truncate: 
                 mask = np.random.choice([False, True], len(initial_shape), p=[0.5, 0.5])
@@ -71,8 +73,8 @@ class ModelDataset():
 
         else:
             pos = self.order_cv[num]
-            shape = self.test_data['data'][pos]
-            label = self.test_data['labels'][pos]
+            shape = self.test_data[b'data'][pos]
+            label = self.test_data[b'labels'][pos]
 
         metadata = []
         return shape, label, metadata

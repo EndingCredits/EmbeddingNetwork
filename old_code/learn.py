@@ -50,7 +50,7 @@ def main(_):
     for run in runs:
       # Launch the graph
       with tf.Session(config=config) as sess:
-        print "Test"
+        print("Test")
         x = [ [[ 1.0, 1.0, 0.0, 0.0 ],
                [ 1.0, 2.0, 0.0, 0.0 ],
                [ 1.0, 3.0, 0.0, 0.0 ],
@@ -68,15 +68,15 @@ def main(_):
       
         sess.run(tf.global_variables_initializer())
         result = sess.run( out );
-        print result
+        #print(result)
       
         agent_params = run['agent_params'] ; env_params = run['env_params']
           
-        print "Building agent with params: "
-        print agent_params
+        print("Building agent with params: ")
+        print(agent_params)
         agent = Agent(sess, agent_params)
-        print "Building environment with params: "
-        print env_params
+        print("Building environment with params: ")
+        print(env_params)
         env = shapeGenerator(env_params)
         sess.run(tf.global_variables_initializer())
           
@@ -87,17 +87,17 @@ def main(_):
                       'test_accuracy': test_stats['accuracy'] }
         summaries.append(summary)
 
-        print "Saving statistics to " + filename + "..."
+        print("Saving statistics to " + filename + "...")
         np.save(filename, summaries)
-        print
+        print()
         #tf.reset_default_graph()
     
 
 def train_agent(agent, env, training_iters, display_step = 100):
 
-    print "Training agent with params: "
+    print("Training agent with params: ")
     for key in agent.hyperparams.keys():
-        print "    " + key + ": " + str(agent.hyperparams[key])
+        print("    " + key + ": " + str(agent.hyperparams[key]))
 
     # Inititalise statistics
     steps= [0] ; loss = [ 0.0, ] ; acc = [ 0.0, ]
@@ -135,7 +135,7 @@ def train_agent(agent, env, training_iters, display_step = 100):
 
 def test_agent(agent, env, test_iters=100):
 
-    print "Testing: "
+    print("Testing: ")
 
     # Inititalise statistics
     loss = [ ] ; acc = [ ] ; pq = [ ]
