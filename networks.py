@@ -2,7 +2,7 @@ from __future__ import division
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops import rnn
+#from tensorflow.python.ops import rnn
 
 from layers import * # sorry
 
@@ -101,6 +101,7 @@ def deep_sets_network(x,
                       embedding_layers = [256,256,256],
                       output_layers = [256],
                       use_equivariant=True,
+                      pool_type='max',
                       initializer=tf.truncated_normal_initializer(0, 0.02),
                       activation_fn=tf.nn.relu,
                       name="deep_sets_network"):
@@ -133,7 +134,7 @@ def deep_sets_network(x,
                 activation=activation_fn, kernel_initializer=initializer )
         
         # Pool final elements to get input to task network
-        x = pool(x, mask)
+        x = pool(x, mask, pool_type=pool_type, keepdims=False)
         
         # Fully connected (task) part:
         x = feedforward(x, output_layers, name="output", 
@@ -252,7 +253,7 @@ def object_embedding_network(x,
         # Fully connected (task) part:
         x = tf.squeeze(c, axis=-2)
         x = feedforward(x, output_layers, name="output", 
-                        activation=act_fn, kernel_initializer=initializer)
+                        activation=activation_fn, kernel_initializer=initializer)
 
     # Returns the network output
     return x
@@ -358,6 +359,40 @@ def pseudo_relation_network(x,
 
     # Returns the network output
     return x
+
+
+################################################################################
+############################### Other networks #################################
+################################################################################
+
+def RNN(x,
+        mask=None,
+        layers=[128]*2,
+        rnn_cell = tf.contrib.rnn.GRUCell):
+    """
+    """
+
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+    seq_lens = tf.cast(tf.squeeze(get_lengths(mask, is_mask=True), -1), tf.int32)
+
+
+    # Build graph
+    lstm_cells = []
+    for layer in layers:
+        lstm_cells.append(rnn_cell(layer, activation=tf.nn.relu))
+    multi_cell = tf.contrib.rnn.MultiRNNCell(lstm_cells)
+
+    output, _ = tf.nn.bidirectional_dynamic_rnn(multi_cell, multi_cell,
+                      x, sequence_length = seq_lens, dtype=tf.float32)
+
+    print(seq_lens)
+    last = last_relevant(output[0], seq_lens)
+    first = last_relevant(output[1], seq_lens)
+
+    # Returns the network output, parameters, and the last layer as placeholder
+    return tf.concat([first, last], -1)
+
 
 ################################################################################
 ############################### Legacy networks ################################

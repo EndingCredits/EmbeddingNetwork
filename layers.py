@@ -48,6 +48,32 @@ def pool(x,
         else:
             out = tf.reduce_mean(x, -2, keepdims)
 
+    elif pool_type == 'std':
+        if mask is not None:
+            x = x * mask
+            x_mean = pool(x, mask=mask, pool_type="mean", keepdims=keepdims)
+            x_sq_sum = tf.reduce_sum(x*x, -2, keepdims)
+            var = x_sq_sum / tf.reduce_sum(mask, -2, keepdims) - x_mean * x_mean
+            out = tf.sqrt(var)
+        else:
+            out = tf.math.reduce_std(x, -2, keepdims)
+
+    return out
+
+
+def normalize(x,
+              mask=None):
+    """
+    Normalises by mean and std
+    """
+
+    if mask is None:
+       mask = get_mask(x) # Get mask directly from state
+
+    x = x - pool(x, mask, keepdims=True, pool_type="mean")
+    x = x / (pool(x, mask, keepdims=True, pool_type="std") + 10e-6)
+    out = x * mask
+
     return out
 
 
